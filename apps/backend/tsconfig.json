@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"emitDecoratorMetadata": true,
+		"experimentalDecorators": true,
+		"types": ["node"],
+		"paths": {
+			"@backend/*": ["./src/*"],
+			"@taskflow/database": ["../../packages/database/src"],
+			"@taskflow/orpc": ["../../packages/orpc/src"],
+			"@taskflow/validation": ["../../packages/validation/src"],
+			"@taskflow/supabase": ["../../packages/supabase/src"]
+		}
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist"]
+}

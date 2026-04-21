@@ -1,0 +1,28 @@
+{
+	"name": "taskflow-lite",
+	"version": "0.0.1",
+	"private": true,
+	"description": "TaskFlow Lite — Task management backend monorepo",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "turbo run dev",
+		"build": "turbo run build",
+		"typecheck": "turbo run typecheck",
+		"lint": "turbo run lint",
+		"dev:backend": "turbo run dev --filter=@taskflow/backend...",
+		"clean": "turbo run clean && bunx rimraf node_modules .turbo bun.lock"
+	},
+	"packageManager": "bun@1.3.11",
+	"engines": {
+		"bun": ">=1.3.11"
+	},
+	"devDependencies": {
+		"@types/node": "25.5.0",
+		"rimraf": "6.1.3",
+		"turbo": "2.8.20",
+		"typescript": "5.9.3"
+	}
+}

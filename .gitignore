@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+.next
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Compiled artifacts that may leak into src/ during builds
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+
+# Turbo
+.turbo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Security
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+# .vscode
+.idea
+*.sw?
+.claude/
+.cursor/
+
+# Testing
+coverage
+
+
+# Drizzle
+packages/database/drizzle/meta

@@ -1,0 +1,18 @@
+{
+	"name": "@taskflow/validation",
+	"version": "0.0.1",
+	"private": true,
+	"main": "./dist/index.js",
+	"types": "./src/index.ts",
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"clean": "bunx rimraf node_modules .turbo dist *.tsbuildinfo"
+	},
+	"dependencies": {
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"typescript": "5.9.3"
+	}
+}
