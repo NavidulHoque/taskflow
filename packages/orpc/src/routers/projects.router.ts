@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import {
 	createProjectSchema,
+	listProjectsQuerySchema,
 	messageOutputSchema,
+	paginatedProjectsOutputSchema,
 	projectOutputSchema,
+	projectStatsOutputSchema,
 	updateProjectSchema,
 } from '@taskflow/validation';
 
@@ -25,11 +28,12 @@ export const projectsRouter = {
 		.route({
 			method: 'GET',
 			path: '/projects',
-			summary: 'List all projects for the current user',
+			summary: 'List projects with optional archived filter and pagination',
 			tags: ['projects'],
 		})
-		.output(z.array(projectOutputSchema))
-		.handler(({ context }) => context.services.projects.list(context.userId)),
+		.input(listProjectsQuerySchema)
+		.output(paginatedProjectsOutputSchema)
+		.handler(({ context, input }) => context.services.projects.list(context.userId, input)),
 
 	getById: protectedProcedure
 		.route({
@@ -66,4 +70,37 @@ export const projectsRouter = {
 		.input(z.object({ id: z.string().uuid() }))
 		.output(messageOutputSchema)
 		.handler(({ context, input }) => context.services.projects.delete(context.userId, input.id)),
+
+	archive: protectedProcedure
+		.route({
+			method: 'PATCH',
+			path: '/projects/{id}/archive',
+			summary: 'Archive a project',
+			tags: ['projects'],
+		})
+		.input(z.object({ id: z.string().uuid() }))
+		.output(projectOutputSchema)
+		.handler(({ context, input }) => context.services.projects.archive(context.userId, input.id)),
+
+	unarchive: protectedProcedure
+		.route({
+			method: 'PATCH',
+			path: '/projects/{id}/unarchive',
+			summary: 'Unarchive a project',
+			tags: ['projects'],
+		})
+		.input(z.object({ id: z.string().uuid() }))
+		.output(projectOutputSchema)
+		.handler(({ context, input }) => context.services.projects.unarchive(context.userId, input.id)),
+
+	getStats: protectedProcedure
+		.route({
+			method: 'GET',
+			path: '/projects/{id}/stats',
+			summary: 'Get task count stats for a project grouped by status and priority',
+			tags: ['projects'],
+		})
+		.input(z.object({ id: z.string().uuid() }))
+		.output(projectStatsOutputSchema)
+		.handler(({ context, input }) => context.services.projects.getStats(context.userId, input.id)),
 };

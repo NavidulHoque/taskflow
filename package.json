@@ -12,6 +12,7 @@
 		"build": "turbo run build",
 		"typecheck": "turbo run typecheck",
 		"lint": "turbo run lint",
+		"test": "turbo run test",
 		"dev:backend": "turbo run dev --filter=@taskflow/backend...",
 		"clean": "turbo run clean && bunx rimraf node_modules .turbo bun.lock"
 	},

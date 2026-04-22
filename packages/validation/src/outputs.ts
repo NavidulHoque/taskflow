@@ -39,8 +39,30 @@ export const projectOutputSchema = z.object({
 	title: z.string(),
 	description: z.string().nullable(),
 	userId: z.string(),
+	archivedAt: z.date().nullable(),
 	createdAt: z.date(),
 	updatedAt: z.date(),
+});
+
+export const paginatedProjectsOutputSchema = z.object({
+	data: z.array(projectOutputSchema),
+	total: z.number(),
+	limit: z.number(),
+	offset: z.number(),
+});
+
+export const projectStatsOutputSchema = z.object({
+	total: z.number(),
+	byStatus: z.object({
+		todo: z.number(),
+		in_progress: z.number(),
+		done: z.number(),
+	}),
+	byPriority: z.object({
+		low: z.number(),
+		medium: z.number(),
+		high: z.number(),
+	}),
 });
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -50,9 +72,24 @@ export const taskOutputSchema = z.object({
 	title: z.string(),
 	description: z.string().nullable(),
 	status: z.enum(['todo', 'in_progress', 'done']),
+	priority: z.enum(['low', 'medium', 'high']),
+	dueDate: z.date().nullable(),
+	completedAt: z.date().nullable(),
 	projectId: z.string(),
 	createdAt: z.date(),
 	updatedAt: z.date(),
+});
+
+export const paginatedTasksOutputSchema = z.object({
+	data: z.array(taskOutputSchema),
+	total: z.number(),
+	limit: z.number(),
+	offset: z.number(),
+});
+
+export const bulkActionOutputSchema = z.object({
+	message: z.string(),
+	count: z.number(),
 });
 
 // ─── Health ───────────────────────────────────────────────────────────────────
@@ -66,9 +103,13 @@ export const healthOutputSchema = z.object({
 // ─── Inferred Types ───────────────────────────────────────────────────────────
 
 export type MessageOutput = z.infer<typeof messageOutputSchema>;
+export type BulkActionOutput = z.infer<typeof bulkActionOutputSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
 export type UserOutput = z.infer<typeof userOutputSchema>;
 export type ProjectOutput = z.infer<typeof projectOutputSchema>;
+export type PaginatedProjectsOutput = z.infer<typeof paginatedProjectsOutputSchema>;
+export type ProjectStatsOutput = z.infer<typeof projectStatsOutputSchema>;
 export type TaskOutput = z.infer<typeof taskOutputSchema>;
+export type PaginatedTasksOutput = z.infer<typeof paginatedTasksOutputSchema>;
 export type HealthOutput = z.infer<typeof healthOutputSchema>;
