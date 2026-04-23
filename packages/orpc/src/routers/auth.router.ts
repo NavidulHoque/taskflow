@@ -1,9 +1,15 @@
 import {
 	authSessionSchema,
+	changePasswordSchema,
+	exchangeOAuthSessionSchema,
+	forgotPasswordSchema,
+	getOAuthUrlSchema,
 	loginSchema,
 	messageOutputSchema,
+	oAuthUrlOutputSchema,
 	refreshTokenSchema,
 	registerSchema,
+	resetPasswordSchema,
 } from '@taskflow/validation';
 
 import { protectedProcedure, publicProcedure } from '../init';
@@ -53,4 +59,61 @@ export const authRouter = {
 		.input(refreshTokenSchema)
 		.output(authSessionSchema)
 		.handler(({ context, input }) => context.services.auth.refreshToken(input)),
+
+	forgotPassword: publicProcedure
+		.route({
+			method: 'POST',
+			path: '/auth/forgot-password',
+			summary: 'Send a password reset email',
+			tags: ['auth'],
+		})
+		.input(forgotPasswordSchema)
+		.output(messageOutputSchema)
+		.handler(({ context, input }) => context.services.auth.forgotPassword(input)),
+
+	resetPassword: protectedProcedure
+		.route({
+			method: 'POST',
+			path: '/auth/reset-password',
+			summary: 'Reset password using a recovery token',
+			tags: ['auth'],
+		})
+		.input(resetPasswordSchema)
+		.output(messageOutputSchema)
+		.handler(({ context, input }) => context.services.auth.resetPassword(context.userId, input)),
+
+	changePassword: protectedProcedure
+		.route({
+			method: 'POST',
+			path: '/auth/change-password',
+			summary: 'Change password for the current user',
+			tags: ['auth'],
+		})
+		.input(changePasswordSchema)
+		.output(messageOutputSchema)
+		.handler(({ context, input }) =>
+			context.services.auth.changePassword(context.userId, context.userToken!, input)
+		),
+
+	getOAuthUrl: publicProcedure
+		.route({
+			method: 'GET',
+			path: '/auth/oauth/url',
+			summary: 'Get the OAuth authorization URL for a provider',
+			tags: ['auth'],
+		})
+		.input(getOAuthUrlSchema)
+		.output(oAuthUrlOutputSchema)
+		.handler(({ context, input }) => context.services.auth.getOAuthUrl(input)),
+
+	exchangeOAuthSession: publicProcedure
+		.route({
+			method: 'POST',
+			path: '/auth/oauth/exchange',
+			summary: 'Exchange OAuth tokens for a session after provider redirect',
+			tags: ['auth'],
+		})
+		.input(exchangeOAuthSessionSchema)
+		.output(authSessionSchema)
+		.handler(({ context, input }) => context.services.auth.exchangeOAuthSession(input)),
 };

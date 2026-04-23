@@ -12,6 +12,7 @@ export const authUserSchema = z.object({
 	id: z.string(),
 	email: z.string(),
 	fullName: z.string(),
+	emailVerified: z.boolean(),
 });
 
 export const authSessionSchema = z.object({
@@ -28,6 +29,7 @@ export const userOutputSchema = z.object({
 	id: z.string(),
 	email: z.string(),
 	fullName: z.string(),
+	emailVerified: z.boolean(),
 	createdAt: z.date(),
 	updatedAt: z.date(),
 });
@@ -92,6 +94,12 @@ export const bulkActionOutputSchema = z.object({
 	count: z.number(),
 });
 
+// ─── OAuth ────────────────────────────────────────────────────────────────────
+
+export const oAuthUrlOutputSchema = z.object({
+	url: z.string(),
+});
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 
 export const healthOutputSchema = z.object({
@@ -112,4 +120,5 @@ export type PaginatedProjectsOutput = z.infer<typeof paginatedProjectsOutputSche
 export type ProjectStatsOutput = z.infer<typeof projectStatsOutputSchema>;
 export type TaskOutput = z.infer<typeof taskOutputSchema>;
 export type PaginatedTasksOutput = z.infer<typeof paginatedTasksOutputSchema>;
+export type OAuthUrlOutput = z.infer<typeof oAuthUrlOutputSchema>;
 export type HealthOutput = z.infer<typeof healthOutputSchema>;

@@ -19,6 +19,10 @@ const mockUser = {
 	updatedAt: new Date('2024-01-01'),
 };
 
+const mockAuthUser = {
+	user: { email_confirmed_at: '2024-01-01T00:00:00Z' },
+};
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('UsersService', () => {
@@ -32,7 +36,8 @@ describe('UsersService', () => {
 			admin: {
 				auth: {
 					admin: {
-						updateUserById: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
+						getUserById: jest.fn(() => Promise.resolve({ data: mockAuthUser })) as jest.Mock,
+						deleteUser: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
 					},
 				},
 			},
@@ -52,12 +57,13 @@ describe('UsersService', () => {
 	// ─── me ───────────────────────────────────────────────────────────────────
 
 	describe('me', () => {
-		it('returns the user profile', async () => {
+		it('returns the user profile with emailVerified', async () => {
 			dbService.db = { select: jest.fn(() => chain([mockUser])) };
 
 			const result = await service.me(userId);
 
-			expect(result).toEqual(mockUser);
+			expect(result).toEqual({ ...mockUser, emailVerified: true });
+			expect(supabaseService.admin.auth.admin.getUserById).toHaveBeenCalledWith(userId);
 		});
 
 		it('throws NOT_FOUND when user does not exist', async () => {
@@ -70,27 +76,13 @@ describe('UsersService', () => {
 	// ─── updateMe ─────────────────────────────────────────────────────────────
 
 	describe('updateMe', () => {
-		it('updates Supabase metadata and the database row', async () => {
+		it('updates the database row and returns a message', async () => {
 			const updated = { ...mockUser, fullName: 'New Name' };
 			dbService.db = { update: jest.fn(() => chain([updated])) };
 
 			const result = await service.updateMe(userId, { fullName: 'New Name' });
 
-			expect(result.fullName).toBe('New Name');
-			expect(supabaseService.admin.auth.admin.updateUserById).toHaveBeenCalledWith(
-				userId,
-				expect.objectContaining({ user_metadata: { fullName: 'New Name' } })
-			);
-		});
-
-		it('throws INTERNAL_SERVER_ERROR when Supabase update fails', async () => {
-			supabaseService.admin.auth.admin.updateUserById.mockImplementation(() =>
-				Promise.resolve({ error: { message: 'supabase error' } })
-			);
-
-			await expect(service.updateMe(userId, { fullName: 'New Name' })).rejects.toMatchObject({
-				code: 'INTERNAL_SERVER_ERROR',
-			});
+			expect(result).toEqual({ message: 'Profile updated successfully' });
 		});
 
 		it('throws NOT_FOUND when user row does not exist in the database', async () => {
@@ -98,6 +90,29 @@ describe('UsersService', () => {
 
 			await expect(service.updateMe(userId, { fullName: 'New Name' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
+			});
+		});
+	});
+
+	// ─── deleteAccount ────────────────────────────────────────────────────────
+
+	describe('deleteAccount', () => {
+		it('deletes the auth user and returns a message', async () => {
+			dbService.db = { delete: jest.fn(() => chain([])) };
+
+			const result = await service.deleteAccount(userId);
+
+			expect(result).toEqual({ message: 'Account deleted successfully' });
+			expect(supabaseService.admin.auth.admin.deleteUser).toHaveBeenCalledWith(userId);
+		});
+
+		it('throws INTERNAL_SERVER_ERROR when Supabase delete fails', async () => {
+			supabaseService.admin.auth.admin.deleteUser.mockImplementation(() =>
+				Promise.resolve({ error: { message: 'supabase error' } })
+			);
+
+			await expect(service.deleteAccount(userId)).rejects.toMatchObject({
+				code: 'INTERNAL_SERVER_ERROR',
 			});
 		});
 	});

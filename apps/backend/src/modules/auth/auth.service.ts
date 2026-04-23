@@ -6,7 +6,17 @@ import { users } from '@taskflow/database';
 import { createAnonClient } from '@taskflow/supabase';
 
 import type { IAuthService } from '@taskflow/orpc';
-import type { AuthSession, LoginInput, RefreshTokenInput, RegisterInput } from '@taskflow/validation';
+import type {
+	AuthSession,
+	ChangePasswordInput,
+	ExchangeOAuthSessionInput,
+	ForgotPasswordInput,
+	GetOAuthUrlInput,
+	LoginInput,
+	RefreshTokenInput,
+	RegisterInput,
+	ResetPasswordInput,
+} from '@taskflow/validation';
 
 import { EnvService } from '@backend/modules/config/env.service';
 import { DatabaseService } from '@backend/modules/database/database.service';
@@ -95,6 +105,7 @@ export class AuthService implements IAuthService {
 				id: data.user.id,
 				email,
 				fullName,
+				emailVerified: true,
 			},
 		};
 	}
@@ -131,6 +142,7 @@ export class AuthService implements IAuthService {
 				id: user.id,
 				email: user.email!,
 				fullName: profile.fullName,
+				emailVerified: !!user.email_confirmed_at,
 			},
 		};
 	}
@@ -184,7 +196,122 @@ export class AuthService implements IAuthService {
 				id: user.id,
 				email: user.email!,
 				fullName: profile.fullName,
+				emailVerified: !!user.email_confirmed_at,
 			},
 		};
+	}
+
+	async forgotPassword(input: ForgotPasswordInput): Promise<{ message: string }> {
+		// Always return the same message to avoid email enumeration
+		await this.supabase.admin.auth.resetPasswordForEmail(input.email);
+
+		return { message: 'If an account with that email exists, a password reset link has been sent' };
+	}
+
+	async resetPassword(userId: string, input: ResetPasswordInput): Promise<{ message: string }> {
+		const { error } = await this.supabase.admin.auth.admin.updateUserById(userId, {
+			password: input.password,
+		});
+
+		if (error) {
+			this.logger.error(`resetPassword: failed for user ${userId}`, error);
+			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to reset password' });
+		}
+
+		return { message: 'Password reset successfully' };
+	}
+
+	getOAuthUrl(input: GetOAuthUrlInput): { url: string } {
+		const url = new URL(`${this.env.supabaseUrl}/auth/v1/authorize`);
+		url.searchParams.set('provider', input.provider);
+		url.searchParams.set('redirect_to', input.redirectTo);
+		return { url: url.toString() };
+	}
+
+	async exchangeOAuthSession(input: ExchangeOAuthSessionInput): Promise<AuthSession> {
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
+		});
+
+		const { data, error } = await tempClient.auth.setSession({
+			access_token: input.accessToken,
+			refresh_token: input.refreshToken,
+		});
+
+		if (error || !data.session || !data.user) {
+			throw new ORPCError('UNAUTHORIZED', { message: 'Invalid or expired OAuth session' });
+		}
+
+		const { session, user } = data;
+
+		// Auto-provision a DB profile on first Google sign-in
+		let [profile] = await this.database.db
+			.select({ fullName: users.fullName })
+			.from(users)
+			.where(eq(users.id, user.id))
+			.limit(1);
+
+		if (!profile) {
+			const fullName =
+				(user.user_metadata?.full_name as string | undefined) ??
+				(user.user_metadata?.name as string | undefined) ??
+				user.email?.split('@')[0] ??
+				'Unknown';
+
+			await this.database.db.insert(users).values({
+				id: user.id,
+				email: user.email!,
+				fullName,
+			});
+
+			profile = { fullName };
+		}
+
+		return {
+			accessToken: session.access_token,
+			refreshToken: session.refresh_token,
+			expiresIn: session.expires_in,
+			expiresAt: session.expires_at!,
+			user: {
+				id: user.id,
+				email: user.email!,
+				fullName: profile.fullName,
+				emailVerified: !!user.email_confirmed_at,
+			},
+		};
+	}
+
+	async changePassword(userId: string, token: string, input: ChangePasswordInput): Promise<{ message: string }> {
+		// 1. Verify current password by signing in
+		const { data: userData } = await this.supabase.admin.auth.admin.getUserById(userId);
+
+		if (!userData.user?.email) {
+			throw new ORPCError('NOT_FOUND', { message: 'User not found' });
+		}
+
+		const { error: verifyError } = await this.supabase.admin.auth.signInWithPassword({
+			email: userData.user.email,
+			password: input.currentPassword,
+		});
+
+		if (verifyError) {
+			throw new ORPCError('UNAUTHORIZED', { message: 'Current password is incorrect' });
+		}
+
+		// 2. Update to the new password
+		const { error: updateError } = await this.supabase.admin.auth.admin.updateUserById(userId, {
+			password: input.newPassword,
+		});
+
+		if (updateError) {
+			this.logger.error(`changePassword: failed to update password for user ${userId}`, updateError);
+			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to change password' });
+		}
+
+		// 3. Invalidate all existing sessions so only the new password works
+		await this.supabase.admin.auth.admin.signOut(token);
+
+		return { message: 'Password changed successfully. Please log in again.' };
 	}
 }

@@ -1,4 +1,4 @@
-import { updateUserSchema, userOutputSchema } from '@taskflow/validation';
+import { messageOutputSchema, updateUserSchema, userOutputSchema } from '@taskflow/validation';
 
 import { protectedProcedure } from '../init';
 
@@ -21,6 +21,16 @@ export const usersRouter = {
 			tags: ['users'],
 		})
 		.input(updateUserSchema)
-		.output(userOutputSchema)
+		.output(messageOutputSchema)
 		.handler(({ context, input }) => context.services.users.updateMe(context.userId, input)),
+
+	deleteAccount: protectedProcedure
+		.route({
+			method: 'DELETE',
+			path: '/users/me',
+			summary: 'Delete the current user account',
+			tags: ['users'],
+		})
+		.output(messageOutputSchema)
+		.handler(({ context }) => context.services.users.deleteAccount(context.userId)),
 };

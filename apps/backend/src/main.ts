@@ -1,3 +1,5 @@
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { NestFactory } from '@nestjs/core';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { OpenAPIHandler } from '@orpc/openapi/fastify';
@@ -15,7 +17,13 @@ import { OrpcService } from '@backend/orpc/orpc.service';
 
 async function bootstrap() {
 	const app = await NestFactory.create<NestFastifyApplication>(AppModule, buildFastifyAdapter());
-	const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
+	const fastify = app.getHttpAdapter().getInstance() as unknown as FastifyInstance;
+
+	await fastify.register(fastifyHelmet);
+	await fastify.register(fastifyRateLimit, {
+		max: 100,
+		timeWindow: '1 minute',
+	});
 
 	// oRPC needs to handle body parsing itself for all content types.
 	// NOTE: This wildcard parser overrides Fastify's built-in JSON parser for all routes.

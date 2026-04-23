@@ -19,29 +19,22 @@ export class UsersService implements IUsersService {
 	) {}
 
 	async me(userId: string): Promise<UserOutput> {
-		const [user] = await this.database.db
-			.select()
-			.from(users)
-			.where(eq(users.id, userId))
-			.limit(1);
+		const [dbUser, { data: authData }] = await Promise.all([
+			this.database.db.select().from(users).where(eq(users.id, userId)).limit(1).then((r) => r[0]),
+			this.supabase.admin.auth.admin.getUserById(userId),
+		]);
 
-		if (!user) {
+		if (!dbUser) {
 			throw new ORPCError('NOT_FOUND', { message: 'User not found' });
 		}
 
-		return user;
+		return {
+			...dbUser,
+			emailVerified: !!authData.user?.email_confirmed_at,
+		};
 	}
 
-	async updateMe(userId: string, input: UpdateUserInput): Promise<UserOutput> {
-		const { error } = await this.supabase.admin.auth.admin.updateUserById(userId, {
-			user_metadata: { fullName: input.fullName },
-		});
-
-		if (error) {
-			this.logger.error(`updateMe: failed to update Supabase metadata for ${userId}`, error);
-			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to update profile' });
-		}
-
+	async updateMe(userId: string, input: UpdateUserInput): Promise<{ message: string }> {
 		const [updated] = await this.database.db
 			.update(users)
 			.set({ fullName: input.fullName })
@@ -52,6 +45,19 @@ export class UsersService implements IUsersService {
 			throw new ORPCError('NOT_FOUND', { message: 'User not found' });
 		}
 
-		return updated;
+		return { message: 'Profile updated successfully' };
+	}
+
+	async deleteAccount(userId: string): Promise<{ message: string }> {
+		const { error } = await this.supabase.admin.auth.admin.deleteUser(userId);
+
+		if (error) {
+			this.logger.error(`deleteAccount: failed to delete Supabase auth user ${userId}`, error);
+			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to delete account' });
+		}
+
+		await this.database.db.delete(users).where(eq(users.id, userId));
+
+		return { message: 'Account deleted successfully' };
 	}
 }

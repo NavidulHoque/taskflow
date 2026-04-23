@@ -39,7 +39,7 @@ export class TasksService implements ITasksService {
 			.values({ ...rest, projectId, dueDate: dueDate ? new Date(dueDate) : null })
 			.returning();
 
-		return task;
+		return task as TaskOutput;
 	}
 
 	async listByProject(
@@ -82,7 +82,7 @@ export class TasksService implements ITasksService {
 			.limit(query.limit)
 			.offset(query.offset);
 
-		return { data, total: Number(total), limit: query.limit, offset: query.offset };
+		return { data: data as TaskOutput[], total: Number(total), limit: query.limit, offset: query.offset };
 	}
 
 	async update(userId: string, taskId: string, input: UpdateTaskInput): Promise<TaskOutput> {
@@ -105,7 +105,7 @@ export class TasksService implements ITasksService {
 			.where(eq(tasks.id, taskId))
 			.returning();
 
-		return updated;
+		return updated as TaskOutput;
 	}
 
 	async updateStatus(userId: string, taskId: string, status: TaskStatus): Promise<TaskOutput> {

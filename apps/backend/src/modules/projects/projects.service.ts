@@ -174,8 +174,8 @@ export class ProjectsService implements IProjectsService {
 		for (const row of rows) {
 			const c = Number(row.value);
 			stats.total += c;
-			stats.byStatus[row.status] += c;
-			stats.byPriority[row.priority] += c;
+			stats.byStatus[row.status as keyof typeof stats.byStatus] += c;
+			stats.byPriority[row.priority as keyof typeof stats.byPriority] += c;
 		}
 
 		return stats;
