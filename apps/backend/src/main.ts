@@ -3,8 +3,6 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { OpenAPIHandler } from '@orpc/openapi/fastify';
 import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins';
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4';
-import fastifyHelmet from '@fastify/helmet';
-import fastifyRateLimit from '@fastify/rate-limit';
 import type { FastifyInstance } from 'fastify';
 
 import { appRouter } from '@taskflow/orpc';
@@ -17,24 +15,13 @@ import { OrpcService } from '@backend/orpc/orpc.service';
 
 async function bootstrap() {
 	const app = await NestFactory.create<NestFastifyApplication>(AppModule, buildFastifyAdapter());
-	const fastify = app.getHttpAdapter().getInstance() as unknown as FastifyInstance;
+	const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
 
 	// oRPC needs to handle body parsing itself for all content types.
 	// NOTE: This wildcard parser overrides Fastify's built-in JSON parser for all routes.
-	// All API traffic is routed through /api/* and handled by oRPC, which does its own parsing.
+	// All API traffic is routed through /api/* and handled by oRPC, which does its own
+	// parsing. If non-oRPC routes are added in the future they must handle body parsing manually.
 	fastify.addContentTypeParser('*', (_request, _payload, done) => done(null, undefined));
-
-	// Security headers — CSP is disabled to allow the oRPC docs UI to load its assets
-	await fastify.register(fastifyHelmet, { contentSecurityPolicy: false });
-
-	// Rate limiting — 100 requests per IP per minute across all routes
-	await fastify.register(fastifyRateLimit, {
-		max: 100,
-		timeWindow: '1 minute',
-		errorResponseBuilder: (_req, context) => ({
-			message: `Rate limit exceeded — retry after ${context.after}`,
-		}),
-	});
 
 	// Initialise the app so DI is ready before registering the route handler
 	await app.init();

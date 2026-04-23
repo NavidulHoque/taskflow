@@ -1,5 +1,5 @@
 {
-	"name": "@taskflow/validation",
+	"name": "@taskflow/shared",
 	"version": "0.0.1",
 	"private": true,
 	"main": "./dist/index.js",
@@ -9,10 +9,6 @@
 		"lint": "eslint src",
 		"typecheck": "tsc --noEmit",
 		"clean": "bunx rimraf node_modules .turbo dist *.tsbuildinfo"
-	},
-	"dependencies": {
-		"@taskflow/shared": "workspace:*",
-		"zod": "4.3.6"
 	},
 	"devDependencies": {
 		"typescript": "5.9.3"

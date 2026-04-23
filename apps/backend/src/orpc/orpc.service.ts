@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq } from '@taskflow/database';
 import type { FastifyRequest } from 'fastify';
 
 import { users } from '@taskflow/database';

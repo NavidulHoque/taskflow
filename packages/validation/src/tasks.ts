@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done']);
-export const taskPrioritySchema = z.enum(['low', 'medium', 'high']);
+import { TaskPriority, TaskStatus } from '@taskflow/shared';
+
+export const taskStatusSchema = z.enum([TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE]);
+export const taskPrioritySchema = z.enum([TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH]);
 
 export const createTaskSchema = z.object({
 	title: z.string().min(1).max(255),

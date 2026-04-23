@@ -6,10 +6,7 @@
 		"types": ["jest", "node"],
 		"paths": {
 			"@backend/*": ["./src/*"],
-			"@taskflow/database": ["../../packages/database/src"],
-			"@taskflow/orpc": ["../../packages/orpc/src"],
-			"@taskflow/validation": ["../../packages/validation/src"],
-			"@taskflow/supabase": ["../../packages/supabase/src"]
+			"@taskflow/*": ["../../packages/*/src"]
 		}
 	},
 	"include": ["src/**/*"],

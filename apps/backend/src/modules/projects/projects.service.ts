@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, desc, eq, isNull, isNotNull } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, isNotNull } from '@taskflow/database';
 
 import { ORPCError } from '@taskflow/orpc';
 import { projects, tasks } from '@taskflow/database';

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq } from '@taskflow/database';
 
 import { ORPCError } from '@taskflow/orpc';
 import { users } from '@taskflow/database';
