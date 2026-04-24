@@ -9,6 +9,7 @@ import {
 	oAuthUrlOutputSchema,
 	refreshTokenSchema,
 	registerSchema,
+	resendConfirmationSchema,
 	resetPasswordSchema,
 } from '@taskflow/validation';
 
@@ -24,7 +25,7 @@ export const authRouter = {
 			tags: ['auth'],
 		})
 		.input(registerSchema)
-		.output(authSessionSchema)
+		.output(messageOutputSchema)
 		.handler(({ context, input }) => context.services.auth.register(input)),
 
 	login: publicProcedure
@@ -81,6 +82,17 @@ export const authRouter = {
 		.input(resetPasswordSchema)
 		.output(messageOutputSchema)
 		.handler(({ context, input }) => context.services.auth.resetPassword(context.userId, input)),
+
+	resendConfirmation: publicProcedure
+		.route({
+			method: 'POST',
+			path: '/auth/resend-confirmation',
+			summary: 'Resend the email verification link',
+			tags: ['auth'],
+		})
+		.input(resendConfirmationSchema)
+		.output(messageOutputSchema)
+		.handler(({ context, input }) => context.services.auth.resendConfirmation(input)),
 
 	changePassword: protectedProcedure
 		.route({

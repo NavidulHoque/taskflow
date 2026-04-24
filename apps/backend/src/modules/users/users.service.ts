@@ -31,6 +31,7 @@ export class UsersService implements IUsersService {
 		return {
 			...dbUser,
 			emailVerified: !!authData.user?.email_confirmed_at,
+			email: authData.user?.email || '',
 		};
 	}
 

@@ -20,7 +20,7 @@ const mockUser = {
 };
 
 const mockAuthUser = {
-	user: { email_confirmed_at: '2024-01-01T00:00:00Z' },
+	user: { email: 'test@example.com', email_confirmed_at: '2024-01-01T00:00:00Z' },
 };
 
 // ─── Suite ────────────────────────────────────────────────────────────────────

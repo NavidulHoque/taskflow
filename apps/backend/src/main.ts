@@ -19,7 +19,21 @@ async function bootstrap() {
 	const app = await NestFactory.create<NestFastifyApplication>(AppModule, buildFastifyAdapter());
 	const fastify = app.getHttpAdapter().getInstance() as unknown as FastifyInstance;
 
-	await fastify.register(fastifyHelmet);
+	await fastify.register(fastifyHelmet, {
+		contentSecurityPolicy: {
+			directives: {
+				defaultSrc: ["'self'"],
+				scriptSrc: ["'self'", 'https://cdn.jsdelivr.net', "'unsafe-inline'"],
+				styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+				imgSrc: ["'self'", 'data:'],
+				fontSrc: ["'self'", 'https:', 'data:'],
+				objectSrc: ["'none'"],
+				baseUri: ["'self'"],
+				formAction: ["'self'"],
+				frameAncestors: ["'self'"],
+			},
+		},
+	});
 	await fastify.register(fastifyRateLimit, {
 		max: 100,
 		timeWindow: '1 minute',

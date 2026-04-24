@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from '@taskflow/database';
+import { eq, sql } from '@taskflow/database';
 
 import { ORPCError } from '@taskflow/orpc';
 import { users } from '@taskflow/database';
@@ -13,8 +13,10 @@ import type {
 	ForgotPasswordInput,
 	GetOAuthUrlInput,
 	LoginInput,
+	MessageOutput,
 	RefreshTokenInput,
 	RegisterInput,
+	ResendConfirmationInput,
 	ResetPasswordInput,
 } from '@taskflow/validation';
 
@@ -32,14 +34,14 @@ export class AuthService implements IAuthService {
 		private readonly database: DatabaseService
 	) {}
 
-	async register(input: RegisterInput): Promise<AuthSession> {
+	async register(input: RegisterInput): Promise<{ message: string }> {
 		const { fullName, email, password } = input;
 
-		// 1. Create user in Supabase (auto-confirm email for simplicity)
+		// 1. Create auth user — email not confirmed yet.
 		const { data, error } = await this.supabase.admin.auth.admin.createUser({
 			email,
 			password,
-			email_confirm: true,
+			email_confirm: false,
 			user_metadata: { fullName },
 		});
 
@@ -49,33 +51,31 @@ export class AuthService implements IAuthService {
 				case 'user_already_exists':
 					throw new ORPCError('CONFLICT', { message: 'An account with this email already exists' });
 				case 'weak_password':
-					throw new ORPCError('BAD_REQUEST', {
-						message: 'Password is too weak — use at least 8 characters',
-					});
+					throw new ORPCError('BAD_REQUEST', { message: 'Password is too weak — use at least 8 characters' });
 				case 'email_address_invalid':
 					throw new ORPCError('BAD_REQUEST', { message: 'Invalid email address' });
+				case 'over_request_rate_limit':
+				case 'over_email_send_rate_limit':
+					throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
 				default:
-					this.logger.error(`register createUser failed [${error.code}]`, error);
+					this.logger.error(`[register] createUser failed [${error.code}]`, error);
 					throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to create account' });
 			}
 		}
 
-		// 2. Insert user profile in DB
-		try {
-			await this.database.db.insert(users).values({
-				id: data.user.id,
-				email,
-				fullName,
-			});
-		} catch (err) {
-			this.logger.error(`register: failed to create users row for auth user ${data.user.id}`, err);
+		const userId = data.user.id;
 
-			// Rollback: delete the Supabase auth user so the state stays consistent
+		// 2. Insert user profile — roll back the auth user if this fails.
+		try {
+			await this.database.db.insert(users).values({ id: userId, fullName });
+		} catch (err) {
+			this.logger.error(`[register] db insert failed for auth user ${userId}`, err);
+
 			try {
-				await this.supabase.admin.auth.admin.deleteUser(data.user.id);
+				await this.supabase.admin.auth.admin.deleteUser(userId);
 			} catch (rollbackErr) {
 				this.logger.error(
-					`register: rollback deleteUser failed for ${data.user.id} — manual cleanup required`,
+					`[register] rollback deleteUser failed for ${userId} — manual cleanup required`,
 					rollbackErr
 				);
 			}
@@ -83,31 +83,22 @@ export class AuthService implements IAuthService {
 			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to create user profile' });
 		}
 
-		// 3. Sign in to get session tokens
-		const { data: sessionData, error: sessionError } = await this.supabase.admin.auth.signInWithPassword({
-			email,
-			password,
+		// 3. Send verification email via Supabase's built-in email service.
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
 		});
 
-		if (sessionError || !sessionData.session) {
-			this.logger.error('register: signInWithPassword failed after user creation', sessionError);
-			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Account created but sign-in failed' });
+		const { error: resendError } = await tempClient.auth.resend({
+			type: 'signup',
+			email,
+		});
+
+		if (resendError) {
+			this.logger.error(`[register] failed to send verification email`, resendError);
 		}
 
-		const { session } = sessionData;
-
-		return {
-			accessToken: session.access_token,
-			refreshToken: session.refresh_token,
-			expiresIn: session.expires_in,
-			expiresAt: session.expires_at!,
-			user: {
-				id: data.user.id,
-				email,
-				fullName,
-				emailVerified: true,
-			},
-		};
+		return { message: 'Check your email to confirm your account' };
 	}
 
 	async login(input: LoginInput): Promise<AuthSession> {
@@ -117,10 +108,18 @@ export class AuthService implements IAuthService {
 		});
 
 		if (error) {
+			if (error.code === 'email_not_confirmed') {
+				throw new ORPCError('FORBIDDEN', { message: 'Please verify your email before logging in' });
+			}
 			throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' });
 		}
 
 		const { session, user } = data;
+
+		// local safety net — catches cases where Supabase email confirmation enforcement is disabled.
+		if (!user.email_confirmed_at) {
+			throw new ORPCError('FORBIDDEN', { message: 'Please verify your email before logging in' });
+		}
 
 		const [profile] = await this.database.db
 			.select({ fullName: users.fullName })
@@ -147,7 +146,7 @@ export class AuthService implements IAuthService {
 		};
 	}
 
-	async logout(token: string): Promise<{ message: string }> {
+	async logout(token: string): Promise<MessageOutput> {
 		// admin.signOut takes the user's JWT, not their UUID
 		const { error } = await this.supabase.admin.auth.admin.signOut(token);
 
@@ -201,14 +200,59 @@ export class AuthService implements IAuthService {
 		};
 	}
 
-	async forgotPassword(input: ForgotPasswordInput): Promise<{ message: string }> {
-		// Always return the same message to avoid email enumeration
-		await this.supabase.admin.auth.resetPasswordForEmail(input.email);
+	async forgotPassword(input: ForgotPasswordInput): Promise<MessageOutput> {
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
+		});
 
+		// resetPasswordForEmail triggers Supabase's built-in password reset email.
+		const { error } = await tempClient.auth.resetPasswordForEmail(input.email);
+
+		if (error) {
+			if (error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+				throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
+			}
+			this.logger.error('[forgot-password] resetPasswordForEmail failed', error);
+		}
+
+		// always return success — never reveal whether the email exists.
 		return { message: 'If an account with that email exists, a password reset link has been sent' };
 	}
 
-	async resetPassword(userId: string, input: ResetPasswordInput): Promise<{ message: string }> {
+	async resendConfirmation(input: ResendConfirmationInput): Promise<MessageOutput> {
+		// step 1: bail out if already verified — no need to send another email.
+		const [row] = await this.database.db.execute<{ email_confirmed_at: string | null }>(
+			sql`SELECT email_confirmed_at FROM auth.users WHERE email = ${input.email} LIMIT 1`
+		);
+
+		if (row?.email_confirmed_at) {
+			return { message: 'Email already verified' };
+		}
+
+		// step 2: resend via Supabase's built-in email service.
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
+		});
+
+		const { error } = await tempClient.auth.resend({
+			type: 'signup',
+			email: input.email,
+		});
+
+		if (error) {
+			if (error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+				throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
+			}
+			this.logger.error('[resend-confirmation] resend failed', error);
+			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to resend confirmation' });
+		}
+
+		return { message: 'Confirmation email sent successfully' };
+	}
+
+	async resetPassword(userId: string, input: ResetPasswordInput): Promise<MessageOutput> {
 		const { error } = await this.supabase.admin.auth.admin.updateUserById(userId, {
 			password: input.password,
 		});
@@ -261,7 +305,6 @@ export class AuthService implements IAuthService {
 
 			await this.database.db.insert(users).values({
 				id: user.id,
-				email: user.email!,
 				fullName,
 			});
 
@@ -290,10 +333,17 @@ export class AuthService implements IAuthService {
 			throw new ORPCError('NOT_FOUND', { message: 'User not found' });
 		}
 
-		const { error: verifyError } = await this.supabase.admin.auth.signInWithPassword({
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
+		});
+
+		const { error: verifyError } = await tempClient.auth.signInWithPassword({
 			email: userData.user.email,
 			password: input.currentPassword,
 		});
+
+		await tempClient.auth.signOut();
 
 		if (verifyError) {
 			throw new ORPCError('UNAUTHORIZED', { message: 'Current password is incorrect' });

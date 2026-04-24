@@ -42,6 +42,10 @@ export const exchangeOAuthSessionSchema = z.object({
 	refreshToken: z.string().min(1),
 });
 
+export const resendConfirmationSchema = z.object({
+	email: z.email(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
@@ -51,3 +55,4 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type GetOAuthUrlInput = z.infer<typeof getOAuthUrlSchema>;
 export type ExchangeOAuthSessionInput = z.infer<typeof exchangeOAuthSessionSchema>;
+export type ResendConfirmationInput = z.infer<typeof resendConfirmationSchema>;

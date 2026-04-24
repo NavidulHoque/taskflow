@@ -17,6 +17,6 @@ export const createAdminClient = ({ url, key }: SupabaseConfig): SupabaseClient 
 // anon client — use with publishable (anon) key
 export const createAnonClient = ({ url, key }: SupabaseConfig): SupabaseClient => {
 	return createClient(url, key, {
-		auth: { persistSession: true },
+		auth: { persistSession: false },
 	});
 };

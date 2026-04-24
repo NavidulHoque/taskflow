@@ -4,20 +4,23 @@ import type {
 	ForgotPasswordInput,
 	GetOAuthUrlInput,
 	LoginInput,
+	MessageOutput,
 	RefreshTokenInput,
 	RegisterInput,
+	ResendConfirmationInput,
 	ResetPasswordInput,
 } from '@taskflow/validation';
 import type { AuthSession } from '@taskflow/validation';
 
 export interface IAuthService {
-	register(input: RegisterInput): Promise<AuthSession>;
+	register(input: RegisterInput): Promise<MessageOutput>;
 	login(input: LoginInput): Promise<AuthSession>;
-	logout(token: string): Promise<{ message: string }>;
+	logout(token: string): Promise<MessageOutput>;
 	refreshToken(input: RefreshTokenInput): Promise<AuthSession>;
-	forgotPassword(input: ForgotPasswordInput): Promise<{ message: string }>;
-	resetPassword(userId: string, input: ResetPasswordInput): Promise<{ message: string }>;
-	changePassword(userId: string, token: string, input: ChangePasswordInput): Promise<{ message: string }>;
+	forgotPassword(input: ForgotPasswordInput): Promise<MessageOutput>;
+	resetPassword(userId: string, input: ResetPasswordInput): Promise<MessageOutput>;
+	resendConfirmation(input: ResendConfirmationInput): Promise<MessageOutput>;
+	changePassword(userId: string, token: string, input: ChangePasswordInput): Promise<MessageOutput>;
 	getOAuthUrl(input: GetOAuthUrlInput): { url: string };
 	exchangeOAuthSession(input: ExchangeOAuthSessionInput): Promise<AuthSession>;
 }

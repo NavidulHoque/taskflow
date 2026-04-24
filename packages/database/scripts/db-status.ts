@@ -26,9 +26,9 @@ async function main() {
 			return { file: file.replace('.sql', ''), hash };
 		});
 
-	const appliedRows = await sql<{ hash: string; name: string | null }[]>`
-		select hash, name from drizzle.__drizzle_migrations order by created_at asc
-	`.catch(() => [] as { hash: string; name: string | null }[]);
+	const appliedRows = await sql<{ hash: string }[]>`
+		select hash from drizzle.__drizzle_migrations order by created_at asc
+	`.catch(() => [] as { hash: string }[]);
 
 	const appliedHashes = new Set(appliedRows.map((r) => r.hash));
 

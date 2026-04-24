@@ -8,6 +8,13 @@ import { chain } from '@backend/test-utils/helpers';
 
 import { AuthService } from '@backend/modules/auth/auth.service';
 
+jest.mock('@taskflow/supabase', () => ({
+	createAnonClient: jest.fn(),
+	createAdminClient: jest.fn(),
+}));
+
+import { createAnonClient } from '@taskflow/supabase';
+
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const userId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -22,7 +29,7 @@ const mockSession = {
 	expires_at: 9_999_999,
 };
 
-const mockSupabaseUser = { id: userId, email };
+const mockSupabaseUser = { id: userId, email, email_confirmed_at: '2024-01-01' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,12 +55,22 @@ function buildSupabaseMock() {
 	};
 }
 
+function buildAnonClientMock() {
+	return {
+		auth: {
+			resend: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
+			resetPasswordForEmail: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
+		},
+	};
+}
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('AuthService', () => {
 	let service: AuthService;
 	let dbService: { db: any };
 	let supabaseMock: ReturnType<typeof buildSupabaseMock>;
+	let anonClientMock: ReturnType<typeof buildAnonClientMock>;
 
 	const mockEnv = {
 		supabaseUrl: 'https://test.supabase.co',
@@ -63,6 +80,9 @@ describe('AuthService', () => {
 	beforeEach(async () => {
 		dbService = { db: {} };
 		supabaseMock = buildSupabaseMock();
+		anonClientMock = buildAnonClientMock();
+
+		(createAnonClient as jest.Mock).mockReturnValue(anonClientMock);
 
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
@@ -80,9 +100,10 @@ describe('AuthService', () => {
 
 	describe('register', () => {
 		it('throws CONFLICT when email already exists', async () => {
-			supabaseMock.admin.auth.admin.createUser.mockImplementation(() =>
-				Promise.resolve({ data: null, error: { code: 'email_exists' } })
-			);
+			supabaseMock.admin.auth.admin.createUser.mockResolvedValue({
+				data: null,
+				error: { code: 'email_exists' },
+			});
 
 			await expect(service.register({ fullName, email, password })).rejects.toMatchObject({
 				code: 'CONFLICT',
@@ -90,9 +111,10 @@ describe('AuthService', () => {
 		});
 
 		it('throws BAD_REQUEST for weak password', async () => {
-			supabaseMock.admin.auth.admin.createUser.mockImplementation(() =>
-				Promise.resolve({ data: null, error: { code: 'weak_password' } })
-			);
+			supabaseMock.admin.auth.admin.createUser.mockResolvedValue({
+				data: null,
+				error: { code: 'weak_password' },
+			});
 
 			await expect(service.register({ fullName, email, password })).rejects.toMatchObject({
 				code: 'BAD_REQUEST',
@@ -100,9 +122,10 @@ describe('AuthService', () => {
 		});
 
 		it('throws INTERNAL_SERVER_ERROR on unexpected Supabase error', async () => {
-			supabaseMock.admin.auth.admin.createUser.mockImplementation(() =>
-				Promise.resolve({ data: null, error: { code: 'unexpected_error' } })
-			);
+			supabaseMock.admin.auth.admin.createUser.mockResolvedValue({
+				data: null,
+				error: { code: 'unexpected_error' },
+			});
 
 			await expect(service.register({ fullName, email, password })).rejects.toMatchObject({
 				code: 'INTERNAL_SERVER_ERROR',
@@ -123,13 +146,12 @@ describe('AuthService', () => {
 			expect(supabaseMock.admin.auth.admin.deleteUser).toHaveBeenCalledWith(userId);
 		});
 
-		it('registers a user and returns a session', async () => {
+		it('registers a user and returns a confirmation message', async () => {
 			dbService.db = { insert: jest.fn(() => chain(undefined)) };
 
 			const result = await service.register({ fullName, email, password });
 
-			expect(result.accessToken).toBe(mockSession.access_token);
-			expect(result.user.email).toBe(email);
+			expect(result.message).toBe('Check your email to confirm your account');
 		});
 	});
 
