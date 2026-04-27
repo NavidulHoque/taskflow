@@ -1,5 +1,4 @@
 import type {
-	ChangePasswordInput,
 	ExchangeOAuthSessionInput,
 	ForgotPasswordInput,
 	GetOAuthUrlInput,
@@ -20,7 +19,6 @@ export interface IAuthService {
 	forgotPassword(input: ForgotPasswordInput): Promise<MessageOutput>;
 	resetPassword(userId: string, input: ResetPasswordInput): Promise<MessageOutput>;
 	resendConfirmation(input: ResendConfirmationInput): Promise<MessageOutput>;
-	changePassword(userId: string, token: string, input: ChangePasswordInput): Promise<MessageOutput>;
 	getOAuthUrl(input: GetOAuthUrlInput): { url: string };
 	exchangeOAuthSession(input: ExchangeOAuthSessionInput): Promise<AuthSession>;
 }

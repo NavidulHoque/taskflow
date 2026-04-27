@@ -3,12 +3,11 @@ import { eq, sql } from '@taskflow/database';
 
 import { ORPCError } from '@taskflow/orpc';
 import { users } from '@taskflow/database';
-import { createAnonClient } from '@taskflow/supabase';
+import { AuthError, createAnonClient } from '@taskflow/supabase';
 
 import type { IAuthService } from '@taskflow/orpc';
 import type {
 	AuthSession,
-	ChangePasswordInput,
 	ExchangeOAuthSessionInput,
 	ForgotPasswordInput,
 	GetOAuthUrlInput,
@@ -32,9 +31,9 @@ export class AuthService implements IAuthService {
 		private readonly env: EnvService,
 		private readonly supabase: SupabaseService,
 		private readonly database: DatabaseService
-	) {}
+	) { }
 
-	async register(input: RegisterInput): Promise<{ message: string }> {
+	async register(input: RegisterInput): Promise<MessageOutput> {
 		const { fullName, email, password } = input;
 
 		// 1. Create auth user — email not confirmed yet.
@@ -54,7 +53,6 @@ export class AuthService implements IAuthService {
 					throw new ORPCError('BAD_REQUEST', { message: 'Password is too weak — use at least 8 characters' });
 				case 'email_address_invalid':
 					throw new ORPCError('BAD_REQUEST', { message: 'Invalid email address' });
-				case 'over_request_rate_limit':
 				case 'over_email_send_rate_limit':
 					throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
 				default:
@@ -84,15 +82,7 @@ export class AuthService implements IAuthService {
 		}
 
 		// 3. Send verification email via Supabase's built-in email service.
-		const tempClient = createAnonClient({
-			url: this.env.supabaseUrl,
-			key: this.env.supabasePublishableKey,
-		});
-
-		const { error: resendError } = await tempClient.auth.resend({
-			type: 'signup',
-			email,
-		});
+		const resendError = await this.sendSupabaseEmail(email);
 
 		if (resendError) {
 			this.logger.error(`[register] failed to send verification email`, resendError);
@@ -102,7 +92,12 @@ export class AuthService implements IAuthService {
 	}
 
 	async login(input: LoginInput): Promise<AuthSession> {
-		const { data, error } = await this.supabase.admin.auth.signInWithPassword({
+		const tempClient = createAnonClient({
+			url: this.env.supabaseUrl,
+			key: this.env.supabasePublishableKey,
+		});
+
+		const { data, error } = await tempClient.auth.signInWithPassword({
 			email: input.email,
 			password: input.password,
 		});
@@ -210,7 +205,7 @@ export class AuthService implements IAuthService {
 		const { error } = await tempClient.auth.resetPasswordForEmail(input.email);
 
 		if (error) {
-			if (error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+			if (error.code === 'over_email_send_rate_limit') {
 				throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
 			}
 			this.logger.error('[forgot-password] resetPasswordForEmail failed', error);
@@ -231,18 +226,10 @@ export class AuthService implements IAuthService {
 		}
 
 		// step 2: resend via Supabase's built-in email service.
-		const tempClient = createAnonClient({
-			url: this.env.supabaseUrl,
-			key: this.env.supabasePublishableKey,
-		});
-
-		const { error } = await tempClient.auth.resend({
-			type: 'signup',
-			email: input.email,
-		});
+		const error = await this.sendSupabaseEmail(input.email);
 
 		if (error) {
-			if (error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+			if (error.code === 'over_email_send_rate_limit') {
 				throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many requests, please try again later' });
 			}
 			this.logger.error('[resend-confirmation] resend failed', error);
@@ -269,6 +256,7 @@ export class AuthService implements IAuthService {
 		const url = new URL(`${this.env.supabaseUrl}/auth/v1/authorize`);
 		url.searchParams.set('provider', input.provider);
 		url.searchParams.set('redirect_to', input.redirectTo);
+		url.searchParams.set('flow_type', 'implicit');
 		return { url: url.toString() };
 	}
 
@@ -325,43 +313,17 @@ export class AuthService implements IAuthService {
 		};
 	}
 
-	async changePassword(userId: string, token: string, input: ChangePasswordInput): Promise<{ message: string }> {
-		// 1. Verify current password by signing in
-		const { data: userData } = await this.supabase.admin.auth.admin.getUserById(userId);
-
-		if (!userData.user?.email) {
-			throw new ORPCError('NOT_FOUND', { message: 'User not found' });
-		}
-
+	private async sendSupabaseEmail(email: string): Promise<AuthError | null> {
 		const tempClient = createAnonClient({
 			url: this.env.supabaseUrl,
 			key: this.env.supabasePublishableKey,
 		});
 
-		const { error: verifyError } = await tempClient.auth.signInWithPassword({
-			email: userData.user.email,
-			password: input.currentPassword,
+		const { error } = await tempClient.auth.resend({
+			type: 'signup',
+			email,
 		});
 
-		await tempClient.auth.signOut();
-
-		if (verifyError) {
-			throw new ORPCError('UNAUTHORIZED', { message: 'Current password is incorrect' });
-		}
-
-		// 2. Update to the new password
-		const { error: updateError } = await this.supabase.admin.auth.admin.updateUserById(userId, {
-			password: input.newPassword,
-		});
-
-		if (updateError) {
-			this.logger.error(`changePassword: failed to update password for user ${userId}`, updateError);
-			throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to change password' });
-		}
-
-		// 3. Invalidate all existing sessions so only the new password works
-		await this.supabase.admin.auth.admin.signOut(token);
-
-		return { message: 'Password changed successfully. Please log in again.' };
+		return error;
 	}
 }

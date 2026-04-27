@@ -1,6 +1,5 @@
 import {
 	authSessionSchema,
-	changePasswordSchema,
 	exchangeOAuthSessionSchema,
 	forgotPasswordSchema,
 	getOAuthUrlSchema,
@@ -93,19 +92,6 @@ export const authRouter = {
 		.input(resendConfirmationSchema)
 		.output(messageOutputSchema)
 		.handler(({ context, input }) => context.services.auth.resendConfirmation(input)),
-
-	changePassword: protectedProcedure
-		.route({
-			method: 'POST',
-			path: '/auth/change-password',
-			summary: 'Change password for the current user',
-			tags: ['auth'],
-		})
-		.input(changePasswordSchema)
-		.output(messageOutputSchema)
-		.handler(({ context, input }) =>
-			context.services.auth.changePassword(context.userId, context.userToken!, input)
-		),
 
 	getOAuthUrl: publicProcedure
 		.route({
