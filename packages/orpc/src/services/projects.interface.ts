@@ -1,6 +1,7 @@
 import type {
 	CreateProjectInput,
 	ListProjectsQuery,
+	MessageOutput,
 	PaginatedProjectsOutput,
 	ProjectOutput,
 	ProjectStatsOutput,
@@ -12,7 +13,7 @@ export interface IProjectsService {
 	list(userId: string, query: ListProjectsQuery): Promise<PaginatedProjectsOutput>;
 	getById(userId: string, projectId: string): Promise<ProjectOutput>;
 	update(userId: string, projectId: string, input: UpdateProjectInput): Promise<ProjectOutput>;
-	delete(userId: string, projectId: string): Promise<{ message: string }>;
+	delete(userId: string, projectId: string): Promise<MessageOutput>;
 	archive(userId: string, projectId: string): Promise<ProjectOutput>;
 	unarchive(userId: string, projectId: string): Promise<ProjectOutput>;
 	getStats(userId: string, projectId: string): Promise<ProjectStatsOutput>;
