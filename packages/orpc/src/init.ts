@@ -2,6 +2,7 @@ import { ORPCError, os } from '@orpc/server';
 
 import type { IAuthService } from './services/auth.interface';
 import type { IProjectsService } from './services/projects.interface';
+import type { IStorageService } from './services/storage.interface';
 import type { ITasksService } from './services/tasks.interface';
 import type { IUsersService } from './services/users.interface';
 
@@ -11,6 +12,7 @@ export type Context = {
 		users: IUsersService;
 		projects: IProjectsService;
 		tasks: ITasksService;
+		storage: IStorageService;
 	};
 	userId?: string;
 	userToken?: string;

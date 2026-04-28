@@ -11,3 +11,4 @@ export type { IAuthService } from './services/auth.interface';
 export type { IUsersService } from './services/users.interface';
 export type { IProjectsService } from './services/projects.interface';
 export type { ITasksService } from './services/tasks.interface';
+export type { IStorageService } from './services/storage.interface';

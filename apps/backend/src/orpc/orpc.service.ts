@@ -8,6 +8,7 @@ import type { Context } from '@taskflow/orpc';
 import { AuthService } from '@backend/modules/auth/auth.service';
 import { DatabaseService } from '@backend/modules/database/database.service';
 import { ProjectsService } from '@backend/modules/projects/projects.service';
+import { StorageService } from '@backend/modules/storage/storage.service';
 import { SupabaseService } from '@backend/modules/supabase/supabase.service';
 import { TasksService } from '@backend/modules/tasks/tasks.service';
 import { UsersService } from '@backend/modules/users/users.service';
@@ -22,7 +23,8 @@ export class OrpcService {
 		private readonly database: DatabaseService,
 		private readonly usersService: UsersService,
 		private readonly projectsService: ProjectsService,
-		private readonly tasksService: TasksService
+		private readonly tasksService: TasksService,
+		private readonly storageService: StorageService
 	) {}
 
 	async createContext(req: FastifyRequest): Promise<Context> {
@@ -31,6 +33,7 @@ export class OrpcService {
 			users: this.usersService,
 			projects: this.projectsService,
 			tasks: this.tasksService,
+			storage: this.storageService,
 		};
 
 		const authHeader = req.headers.authorization;

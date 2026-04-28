@@ -3,6 +3,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 
 import { DatabaseService } from '@backend/modules/database/database.service';
 import { SupabaseService } from '@backend/modules/supabase/supabase.service';
+import { EnvService } from '@backend/modules/config/env.service';
 import { chain } from '@backend/test-utils/helpers';
 
 import { UsersService } from '@backend/modules/users/users.service';
@@ -48,6 +49,10 @@ describe('UsersService', () => {
 				UsersService,
 				{ provide: DatabaseService, useValue: dbService },
 				{ provide: SupabaseService, useValue: supabaseService },
+				{
+					provide: EnvService,
+					useValue: { supabaseUrl: 'https://test.supabase.co', supabasePublishableKey: 'test-anon-key' },
+				},
 			],
 		}).compile();
 

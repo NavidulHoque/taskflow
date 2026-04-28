@@ -60,6 +60,12 @@ function buildAnonClientMock() {
 		auth: {
 			resend: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
 			resetPasswordForEmail: jest.fn(() => Promise.resolve({ error: null })) as jest.Mock,
+			signInWithPassword: jest.fn(() =>
+				Promise.resolve({
+					data: { session: mockSession, user: mockSupabaseUser },
+					error: null,
+				})
+			) as jest.Mock,
 		},
 	};
 }
@@ -159,7 +165,7 @@ describe('AuthService', () => {
 
 	describe('login', () => {
 		it('throws UNAUTHORIZED when credentials are wrong', async () => {
-			supabaseMock.admin.auth.signInWithPassword.mockImplementation(() =>
+			anonClientMock.auth.signInWithPassword.mockImplementation(() =>
 				Promise.resolve({ data: null, error: { message: 'Invalid credentials' } })
 			);
 
