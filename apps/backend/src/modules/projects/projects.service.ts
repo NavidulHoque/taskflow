@@ -6,20 +6,23 @@ import { projects, tasks } from '@taskflow/database';
 import type { IProjectsService } from '@taskflow/orpc';
 import type {
 	CreateProjectInput,
-	ListProjectsQuery,
+	GetProjectsInput,
+	MessageOutput,
 	PaginatedProjectsOutput,
 	ProjectOutput,
 	ProjectStatsOutput,
+	ProjectWithStatsOutput,
 	UpdateProjectInput,
 } from '@taskflow/validation';
 
 import { DatabaseService } from '@backend/modules/database/database.service';
+import { convertToPaginatedOutput } from '@backend/libs/functions/convert-to-paginated-output';
 
 @Injectable()
 export class ProjectsService implements IProjectsService {
-	constructor(private readonly database: DatabaseService) {}
+	constructor(private readonly database: DatabaseService) { }
 
-	async create(userId: string, input: CreateProjectInput): Promise<ProjectOutput> {
+	async createProject(userId: string, input: CreateProjectInput): Promise<ProjectOutput> {
 		const [project] = await this.database.db
 			.insert(projects)
 			.values({ ...input, userId })
@@ -28,29 +31,33 @@ export class ProjectsService implements IProjectsService {
 		return project;
 	}
 
-	async list(userId: string, query: ListProjectsQuery): Promise<PaginatedProjectsOutput> {
+	async getAllProjects(userId: string, query: GetProjectsInput): Promise<PaginatedProjectsOutput> {
 		const archivedFilter =
 			query.archived === true ? isNotNull(projects.archivedAt) : isNull(projects.archivedAt);
 
 		const whereClause = and(eq(projects.userId, userId), archivedFilter);
 
-		const [{ value: total }] = await this.database.db
-			.select({ value: count() })
-			.from(projects)
-			.where(whereClause);
+		const [countResult, data] = await Promise.all([
+			this.database.db
+				.select({ value: count() })
+				.from(projects)
+				.where(whereClause),
 
-		const data = await this.database.db
-			.select()
-			.from(projects)
-			.where(whereClause)
-			.orderBy(desc(projects.createdAt))
-			.limit(query.limit)
-			.offset(query.offset);
+			this.database.db
+				.select()
+				.from(projects)
+				.where(whereClause)
+				.orderBy(desc(projects.createdAt))
+				.limit(query.limit)
+				.offset((query.page - 1) * query.limit),
+		]);
 
-		return { data, total: Number(total), limit: query.limit, offset: query.offset };
+		const [{ value: total }] = countResult;
+
+		return convertToPaginatedOutput(data, total, query.page, query.limit);
 	}
 
-	async getById(userId: string, projectId: string): Promise<ProjectOutput> {
+	async getProjectById(userId: string, projectId: string): Promise<ProjectWithStatsOutput> {
 		const [project] = await this.database.db
 			.select()
 			.from(projects)
@@ -61,10 +68,31 @@ export class ProjectsService implements IProjectsService {
 			throw new ORPCError('NOT_FOUND', { message: 'Project not found' });
 		}
 
-		return project;
+		const rows = await this.database.db
+			.select({ status: tasks.status, priority: tasks.priority, value: count() })
+			.from(tasks)
+			.where(eq(tasks.projectId, projectId))
+			.groupBy(tasks.status, tasks.priority);
+
+		const stats = {
+			total: 0,
+			byStatus: { todo: 0, in_progress: 0, done: 0 },
+			byPriority: { low: 0, medium: 0, high: 0 },
+		};
+
+		for (const row of rows) {
+			const c = Number(row.value);
+			stats.total += c;
+			stats.byStatus[row.status as keyof typeof stats.byStatus] += c;
+			stats.byPriority[row.priority as keyof typeof stats.byPriority] += c;
+		}
+
+		return { ...project, stats };
 	}
 
-	async update(userId: string, projectId: string, input: UpdateProjectInput): Promise<ProjectOutput> {
+	async updateProject(userId: string, input: UpdateProjectInput): Promise<ProjectOutput> {
+		const { id: projectId, ...data } = input;
+
 		const [existing] = await this.database.db
 			.select({ id: projects.id })
 			.from(projects)
@@ -77,14 +105,14 @@ export class ProjectsService implements IProjectsService {
 
 		const [updated] = await this.database.db
 			.update(projects)
-			.set(input)
+			.set(data)
 			.where(eq(projects.id, projectId))
 			.returning();
 
 		return updated;
 	}
 
-	async delete(userId: string, projectId: string): Promise<{ message: string }> {
+	async deleteProject(userId: string, projectId: string): Promise<MessageOutput> {
 		const [existing] = await this.database.db
 			.select({ id: projects.id })
 			.from(projects)
@@ -100,7 +128,7 @@ export class ProjectsService implements IProjectsService {
 		return { message: 'Project deleted successfully' };
 	}
 
-	async archive(userId: string, projectId: string): Promise<ProjectOutput> {
+	async archiveProject(userId: string, projectId: string): Promise<ProjectOutput> {
 		const [existing] = await this.database.db
 			.select({ id: projects.id, archivedAt: projects.archivedAt })
 			.from(projects)
@@ -118,13 +146,13 @@ export class ProjectsService implements IProjectsService {
 		const [updated] = await this.database.db
 			.update(projects)
 			.set({ archivedAt: new Date() })
-			.where(eq(projects.id, projectId))
+			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
 			.returning();
 
 		return updated;
 	}
 
-	async unarchive(userId: string, projectId: string): Promise<ProjectOutput> {
+	async unarchiveProject(userId: string, projectId: string): Promise<ProjectOutput> {
 		const [existing] = await this.database.db
 			.select({ id: projects.id, archivedAt: projects.archivedAt })
 			.from(projects)
@@ -142,42 +170,9 @@ export class ProjectsService implements IProjectsService {
 		const [updated] = await this.database.db
 			.update(projects)
 			.set({ archivedAt: null })
-			.where(eq(projects.id, projectId))
+			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
 			.returning();
 
 		return updated;
-	}
-
-	async getStats(userId: string, projectId: string): Promise<ProjectStatsOutput> {
-		const [project] = await this.database.db
-			.select({ id: projects.id })
-			.from(projects)
-			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-			.limit(1);
-
-		if (!project) {
-			throw new ORPCError('NOT_FOUND', { message: 'Project not found' });
-		}
-
-		const rows = await this.database.db
-			.select({ status: tasks.status, priority: tasks.priority, value: count() })
-			.from(tasks)
-			.where(eq(tasks.projectId, projectId))
-			.groupBy(tasks.status, tasks.priority);
-
-		const stats: ProjectStatsOutput = {
-			total: 0,
-			byStatus: { todo: 0, in_progress: 0, done: 0 },
-			byPriority: { low: 0, medium: 0, high: 0 },
-		};
-
-		for (const row of rows) {
-			const c = Number(row.value);
-			stats.total += c;
-			stats.byStatus[row.status as keyof typeof stats.byStatus] += c;
-			stats.byPriority[row.priority as keyof typeof stats.byPriority] += c;
-		}
-
-		return stats;
 	}
 }

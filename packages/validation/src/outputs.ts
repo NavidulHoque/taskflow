@@ -6,6 +6,16 @@ export const messageOutputSchema = z.object({
 	message: z.string(),
 });
 
+export const paginatedOutputSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
+	z.object({
+		data: z.array(itemSchema),
+		total: z.number(),
+		page: z.number(),
+		limit: z.number(),
+		hasPreviousPage: z.boolean(),
+		hasNextPage: z.boolean(),
+	});
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export const authUserSchema = z.object({
@@ -43,15 +53,12 @@ export const projectOutputSchema = z.object({
 	userId: z.string(),
 	archivedAt: z.date().nullable(),
 	createdAt: z.date(),
-	updatedAt: z.date(),
+	updatedAt: z.date()
 });
 
-export const paginatedProjectsOutputSchema = z.object({
-	data: z.array(projectOutputSchema),
-	total: z.number(),
-	limit: z.number(),
-	offset: z.number(),
-});
+export const paginatedProjectsOutputSchema = paginatedOutputSchema(
+  projectOutputSchema
+);
 
 export const projectStatsOutputSchema = z.object({
 	total: z.number(),
@@ -65,6 +72,10 @@ export const projectStatsOutputSchema = z.object({
 		medium: z.number(),
 		high: z.number(),
 	}),
+});
+
+export const projectWithStatsOutputSchema = projectOutputSchema.extend({
+	stats: projectStatsOutputSchema,
 });
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -116,6 +127,7 @@ export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
 export type UserOutput = z.infer<typeof userOutputSchema>;
 export type ProjectOutput = z.infer<typeof projectOutputSchema>;
+export type ProjectWithStatsOutput = z.infer<typeof projectWithStatsOutputSchema>;
 export type PaginatedProjectsOutput = z.infer<typeof paginatedProjectsOutputSchema>;
 export type ProjectStatsOutput = z.infer<typeof projectStatsOutputSchema>;
 export type TaskOutput = z.infer<typeof taskOutputSchema>;

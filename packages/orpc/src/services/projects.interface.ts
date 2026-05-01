@@ -1,20 +1,18 @@
 import type {
 	CreateProjectInput,
-	ListProjectsQuery,
+	GetProjectsInput,
 	MessageOutput,
 	PaginatedProjectsOutput,
 	ProjectOutput,
-	ProjectStatsOutput,
 	UpdateProjectInput,
 } from '@taskflow/validation';
 
 export interface IProjectsService {
-	create(userId: string, input: CreateProjectInput): Promise<ProjectOutput>;
-	list(userId: string, query: ListProjectsQuery): Promise<PaginatedProjectsOutput>;
-	getById(userId: string, projectId: string): Promise<ProjectOutput>;
-	update(userId: string, projectId: string, input: UpdateProjectInput): Promise<ProjectOutput>;
-	delete(userId: string, projectId: string): Promise<MessageOutput>;
-	archive(userId: string, projectId: string): Promise<ProjectOutput>;
-	unarchive(userId: string, projectId: string): Promise<ProjectOutput>;
-	getStats(userId: string, projectId: string): Promise<ProjectStatsOutput>;
+	createProject(userId: string, input: CreateProjectInput): Promise<ProjectOutput>;
+	getAllProjects(userId: string, query: GetProjectsInput): Promise<PaginatedProjectsOutput>;
+	getProjectById(userId: string, projectId: string): Promise<ProjectOutput>;
+	updateProject(userId: string, input: UpdateProjectInput): Promise<ProjectOutput>;
+	deleteProject(userId: string, projectId: string): Promise<MessageOutput>;
+	archiveProject(userId: string, projectId: string): Promise<ProjectOutput>;
+	unarchiveProject(userId: string, projectId: string): Promise<ProjectOutput>;
 }

@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import {
+	archiveProjectSchema,
 	createProjectSchema,
-	listProjectsQuerySchema,
+	deleteProjectSchema,
+	getProjectByIdSchema,
+	getProjectsSchema,
 	messageOutputSchema,
 	paginatedProjectsOutputSchema,
 	projectOutputSchema,
@@ -22,29 +25,29 @@ export const projectsRouter = {
 		})
 		.input(createProjectSchema)
 		.output(projectOutputSchema)
-		.handler(({ context, input }) => context.services.projects.create(context.userId, input)),
+		.handler(({ context, input }) => context.services.projects.createProject(context.userId, input)),
 
-	list: protectedProcedure
+	get: protectedProcedure
 		.route({
 			method: 'GET',
 			path: '/projects',
 			summary: 'List projects with optional archived filter and pagination',
 			tags: ['projects'],
 		})
-		.input(listProjectsQuerySchema)
+		.input(getProjectsSchema)
 		.output(paginatedProjectsOutputSchema)
-		.handler(({ context, input }) => context.services.projects.list(context.userId, input)),
+		.handler(({ context, input }) => context.services.projects.getAllProjects(context.userId, input)),
 
 	getById: protectedProcedure
 		.route({
 			method: 'GET',
 			path: '/projects/{id}',
-			summary: 'Get a project by ID',
+			summary: 'Get a project by ID including task count stats grouped by status and priority',
 			tags: ['projects'],
 		})
-		.input(z.object({ id: z.string().uuid() }))
+		.input(getProjectByIdSchema)
 		.output(projectOutputSchema)
-		.handler(({ context, input }) => context.services.projects.getById(context.userId, input.id)),
+		.handler(({ context, input }) => context.services.projects.getProjectById(context.userId, input.id)),
 
 	update: protectedProcedure
 		.route({
@@ -53,11 +56,10 @@ export const projectsRouter = {
 			summary: 'Update a project',
 			tags: ['projects'],
 		})
-		.input(updateProjectSchema.extend({ id: z.string().uuid() }))
+		.input(updateProjectSchema)
 		.output(projectOutputSchema)
 		.handler(({ context, input }) => {
-			const { id, ...data } = input;
-			return context.services.projects.update(context.userId, id, data);
+			return context.services.projects.updateProject(context.userId, input);
 		}),
 
 	delete: protectedProcedure
@@ -67,9 +69,9 @@ export const projectsRouter = {
 			summary: 'Delete a project and all its tasks',
 			tags: ['projects'],
 		})
-		.input(z.object({ id: z.string().uuid() }))
+		.input(deleteProjectSchema)
 		.output(messageOutputSchema)
-		.handler(({ context, input }) => context.services.projects.delete(context.userId, input.id)),
+		.handler(({ context, input }) => context.services.projects.deleteProject(context.userId, input.id)),
 
 	archive: protectedProcedure
 		.route({
@@ -78,9 +80,9 @@ export const projectsRouter = {
 			summary: 'Archive a project',
 			tags: ['projects'],
 		})
-		.input(z.object({ id: z.string().uuid() }))
+		.input(archiveProjectSchema)
 		.output(projectOutputSchema)
-		.handler(({ context, input }) => context.services.projects.archive(context.userId, input.id)),
+		.handler(({ context, input }) => context.services.projects.archiveProject(context.userId, input.id)),
 
 	unarchive: protectedProcedure
 		.route({
@@ -91,16 +93,5 @@ export const projectsRouter = {
 		})
 		.input(z.object({ id: z.string().uuid() }))
 		.output(projectOutputSchema)
-		.handler(({ context, input }) => context.services.projects.unarchive(context.userId, input.id)),
-
-	getStats: protectedProcedure
-		.route({
-			method: 'GET',
-			path: '/projects/{id}/stats',
-			summary: 'Get task count stats for a project grouped by status and priority',
-			tags: ['projects'],
-		})
-		.input(z.object({ id: z.string().uuid() }))
-		.output(projectStatsOutputSchema)
-		.handler(({ context, input }) => context.services.projects.getStats(context.userId, input.id)),
+		.handler(({ context, input }) => context.services.projects.unarchiveProject(context.userId, input.id))
 };

@@ -32,11 +32,6 @@ export const listTasksQuerySchema = z.object({
 	offset: z.coerce.number().int().min(0).default(0),
 });
 
-export const paginationSchema = z.object({
-	limit: z.coerce.number().int().min(1).max(100).default(20),
-	offset: z.coerce.number().int().min(0).default(0),
-});
-
 export const bulkTaskIdsSchema = z.object({
 	taskIds: z.array(z.string().uuid()).min(1).max(100),
 });
@@ -54,7 +49,6 @@ export type TaskPriority = z.infer<typeof taskPrioritySchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
-export type PaginationInput = z.infer<typeof paginationSchema>;
 export type BulkTaskIdsInput = z.infer<typeof bulkTaskIdsSchema>;
 export type BulkUpdateStatusInput = z.infer<typeof bulkUpdateStatusSchema>;
 export type BulkUpdatePriorityInput = z.infer<typeof bulkUpdatePrioritySchema>;

@@ -3,3 +3,4 @@ export * from './outputs';
 export * from './projects';
 export * from './tasks';
 export * from './uploads';
+export * from './pagination';

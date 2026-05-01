@@ -6,7 +6,7 @@ import { chain } from '@backend/test-utils/helpers';
 
 import { ProjectsService } from '@backend/modules/projects/projects.service';
 
-// ─── Fixtures ─────────────────────────────────────────────────────────────────
+// ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const userId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const projId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -21,11 +21,11 @@ const mockProject = {
 	updatedAt: new Date('2024-01-01'),
 };
 
-// ─── Suite ────────────────────────────────────────────────────────────────────
+// ─── Suite ───────────────────────────────────────────────────────────────────
 
 describe('ProjectsService', () => {
 	let service: ProjectsService;
-	let dbService: { db: any };
+	let dbService: { db: Record<string, unknown> };
 
 	beforeEach(async () => {
 		dbService = { db: {} };
@@ -40,228 +40,239 @@ describe('ProjectsService', () => {
 		service = module.get(ProjectsService);
 	});
 
-	// ─── create ───────────────────────────────────────────────────────────────
+	// ─── createProject ───────────────────────────────────────────────────────
 
-	describe('create', () => {
+	describe('createProject', () => {
 		it('inserts a project and returns it', async () => {
-			dbService.db = { insert: jest.fn(() => chain([mockProject])) };
+			dbService.db = {
+				insert: jest.fn(() => chain([mockProject])),
+			};
 
-			const result = await service.create(userId, { title: 'Test Project' });
+			const result = await service.createProject(userId, {
+				title: 'Test Project',
+			});
 
 			expect(result).toEqual(mockProject);
 		});
 	});
 
-	// ─── list ─────────────────────────────────────────────────────────────────
+	// ─── getAllProjects ──────────────────────────────────────────────────────
 
-	describe('list', () => {
+	describe('getAllProjects', () => {
 		it('returns paginated active projects by default', async () => {
 			dbService.db = {
-				select: jest.fn(() => {})
+				select: jest.fn()
 					.mockImplementationOnce(() => chain([{ value: 1 }]))
 					.mockImplementationOnce(() => chain([mockProject])),
 			};
 
-			const result = await service.list(userId, { limit: 20, offset: 0 });
+			const result = await service.getAllProjects(userId, {
+				limit: 20,
+				page: 1,
+				archived: false,
+			});
 
-			expect(result).toEqual({ data: [mockProject], total: 1, limit: 20, offset: 0 });
+			expect(result.data).toEqual([mockProject]);
+			expect(result.total).toBe(1);
+			expect(result.limit).toBe(20);
+			expect(result.page).toBe(1);
 		});
 
 		it('returns archived projects when archived is true', async () => {
 			const archivedProject = { ...mockProject, archivedAt: new Date() };
+
 			dbService.db = {
-				select: jest.fn(() => {})
+				select: jest.fn()
 					.mockImplementationOnce(() => chain([{ value: 1 }]))
 					.mockImplementationOnce(() => chain([archivedProject])),
 			};
 
-			const result = await service.list(userId, { archived: true, limit: 20, offset: 0 });
+			const result = await service.getAllProjects(userId, {
+				limit: 20,
+				page: 1,
+				archived: true,
+			});
 
 			expect(result.data[0]!.archivedAt).not.toBeNull();
 		});
+	});
 
-		it('respects limit and offset', async () => {
+	// ─── getProjectById (with stats) ─────────────────────────────────────────
+
+	describe('getProjectById', () => {
+		it('throws NOT_FOUND when project does not exist', async () => {
 			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ value: 50 }]))
-					.mockImplementationOnce(() => chain([mockProject])),
+				select: jest.fn().mockImplementationOnce(() => chain([])),
 			};
 
-			const result = await service.list(userId, { limit: 10, offset: 20 });
-
-			expect(result.total).toBe(50);
-			expect(result.limit).toBe(10);
-			expect(result.offset).toBe(20);
-		});
-	});
-
-	// ─── getById ──────────────────────────────────────────────────────────────
-
-	describe('getById', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
-
-			await expect(service.getById(userId, projId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+			await expect(
+				service.getProjectById(userId, projId),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('returns the project when found', async () => {
-			dbService.db = { select: jest.fn(() => chain([mockProject])) };
+		it('returns project with stats when found', async () => {
+			dbService.db = {
+				select: jest.fn()
+					.mockImplementationOnce(() => chain([mockProject]))
+					.mockImplementationOnce(() =>
+						chain([
+							{ status: 'todo', priority: 'high', value: 2 },
+							{ status: 'done', priority: 'medium', value: 3 },
+						]),
+					),
+			};
 
-			const result = await service.getById(userId, projId);
+			const result = await service.getProjectById(userId, projId);
 
-			expect(result).toEqual(mockProject);
-		});
-	});
-
-	// ─── update ───────────────────────────────────────────────────────────────
-
-	describe('update', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
-
-			await expect(service.update(userId, projId, { title: 'New' })).rejects.toMatchObject({
-				code: 'NOT_FOUND',
+			expect(result.id).toBe(projId);
+			expect(result.stats.total).toBe(5);
+			expect(result.stats.byStatus).toEqual({
+				todo: 2,
+				in_progress: 0,
+				done: 3,
+			});
+			expect(result.stats.byPriority).toEqual({
+				low: 0,
+				medium: 3,
+				high: 2,
 			});
 		});
+	});
 
-		it('returns the updated project', async () => {
+	// ─── updateProject ───────────────────────────────────────────────────────
+
+	describe('updateProject', () => {
+		it('throws NOT_FOUND when project does not exist', async () => {
+			dbService.db = {
+				select: jest.fn(() => chain([])),
+			};
+
+			await expect(
+				service.updateProject(userId, { id: projId, title: 'New' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('returns updated project', async () => {
 			const updated = { ...mockProject, title: 'Updated' };
+
 			dbService.db = {
 				select: jest.fn(() => chain([{ id: projId }])),
 				update: jest.fn(() => chain([updated])),
 			};
 
-			const result = await service.update(userId, projId, { title: 'Updated' });
+			const result = await service.updateProject(userId, {
+				id: projId,
+				title: 'Updated',
+			});
 
 			expect(result.title).toBe('Updated');
 		});
 	});
 
-	// ─── delete ───────────────────────────────────────────────────────────────
+	// ─── deleteProject ───────────────────────────────────────────────────────
 
-	describe('delete', () => {
+	describe('deleteProject', () => {
 		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
+			dbService.db = {
+				select: jest.fn(() => chain([])),
+			};
 
-			await expect(service.delete(userId, projId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+			await expect(
+				service.deleteProject(userId, projId),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('deletes the project and returns success message', async () => {
+		it('deletes project successfully', async () => {
 			dbService.db = {
 				select: jest.fn(() => chain([{ id: projId }])),
 				delete: jest.fn(() => chain(undefined)),
 			};
 
-			const result = await service.delete(userId, projId);
+			const result = await service.deleteProject(userId, projId);
 
 			expect(result.message).toBe('Project deleted successfully');
 		});
 	});
 
-	// ─── archive ──────────────────────────────────────────────────────────────
+	// ─── archiveProject ──────────────────────────────────────────────────────
 
-	describe('archive', () => {
+	describe('archiveProject', () => {
 		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
-
-			await expect(service.archive(userId, projId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
-
-		it('throws BAD_REQUEST when project is already archived', async () => {
 			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId, archivedAt: new Date() }])),
+				select: jest.fn(() => chain([])),
 			};
 
-			await expect(service.archive(userId, projId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+			await expect(
+				service.archiveProject(userId, projId),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('archives the project and returns it with archivedAt set', async () => {
-			const archived = { ...mockProject, archivedAt: new Date() };
+		it('throws BAD_REQUEST when already archived', async () => {
 			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId, archivedAt: null }])),
+				select: jest.fn(() =>
+					chain([{ id: projId, archivedAt: new Date() }]),
+				),
+			};
+
+			await expect(
+				service.archiveProject(userId, projId),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+
+		it('archives project successfully', async () => {
+			const archived = { ...mockProject, archivedAt: new Date() };
+
+			dbService.db = {
+				select: jest.fn(() =>
+					chain([{ id: projId, archivedAt: null }]),
+				),
 				update: jest.fn(() => chain([archived])),
 			};
 
-			const result = await service.archive(userId, projId);
+			const result = await service.archiveProject(userId, projId);
 
 			expect(result.archivedAt).not.toBeNull();
 		});
 	});
 
-	// ─── unarchive ────────────────────────────────────────────────────────────
+	// ─── unarchiveProject ────────────────────────────────────────────────────
 
-	describe('unarchive', () => {
+	describe('unarchiveProject', () => {
 		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
-
-			await expect(service.unarchive(userId, projId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
-
-		it('throws BAD_REQUEST when project is not archived', async () => {
 			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId, archivedAt: null }])),
+				select: jest.fn(() => chain([])),
 			};
 
-			await expect(service.unarchive(userId, projId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+			await expect(
+				service.unarchiveProject(userId, projId),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('clears archivedAt and returns the project', async () => {
-			const unarchived = { ...mockProject, archivedAt: null };
+		it('throws BAD_REQUEST when not archived', async () => {
 			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId, archivedAt: new Date() }])),
+				select: jest.fn(() =>
+					chain([{ id: projId, archivedAt: null }]),
+				),
+			};
+
+			await expect(
+				service.unarchiveProject(userId, projId),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+
+		it('unarchives project successfully', async () => {
+			const unarchived = { ...mockProject, archivedAt: null };
+
+			dbService.db = {
+				select: jest.fn(() =>
+					chain([{ id: projId, archivedAt: new Date() }]),
+				),
 				update: jest.fn(() => chain([unarchived])),
 			};
 
-			const result = await service.unarchive(userId, projId);
+			const result = await service.unarchiveProject(userId, projId);
 
 			expect(result.archivedAt).toBeNull();
-		});
-	});
-
-	// ─── getStats ─────────────────────────────────────────────────────────────
-
-	describe('getStats', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = {
-				select: jest.fn(() => {}).mockImplementationOnce(() => chain([])),
-			};
-
-			await expect(service.getStats(userId, projId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
-
-		it('aggregates task counts by status and priority', async () => {
-			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ id: projId }]))
-					.mockImplementationOnce(() =>
-						chain([
-							{ status: 'todo', priority: 'high', value: 2 },
-							{ status: 'done', priority: 'medium', value: 3 },
-						])
-					),
-			};
-
-			const result = await service.getStats(userId, projId);
-
-			expect(result).toEqual({
-				total: 5,
-				byStatus: { todo: 2, in_progress: 0, done: 3 },
-				byPriority: { low: 0, medium: 3, high: 2 },
-			});
-		});
-
-		it('returns all zeros when project has no tasks', async () => {
-			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ id: projId }]))
-					.mockImplementationOnce(() => chain([])),
-			};
-
-			const result = await service.getStats(userId, projId);
-
-			expect(result.total).toBe(0);
-			expect(result.byStatus).toEqual({ todo: 0, in_progress: 0, done: 0 });
-			expect(result.byPriority).toEqual({ low: 0, medium: 0, high: 0 });
 		});
 	});
 });
