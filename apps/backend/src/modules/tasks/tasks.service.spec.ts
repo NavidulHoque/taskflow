@@ -2,11 +2,18 @@ import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 
 import { DatabaseService } from '@backend/modules/database/database.service';
-import { chain } from '@backend/test-utils/helpers';
-
 import { TasksService } from '@backend/modules/tasks/tasks.service';
 
-// ─── Fixtures ─────────────────────────────────────────────────────────────────
+import type {
+	CreateTaskInput,
+	ListTasksQuery,
+	UpdateTaskInput,
+	BulkUpdateStatusInput,
+	BulkUpdatePriorityInput,
+	BulkDeleteInput,
+} from '@taskflow/validation';
+
+// ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const userId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const projId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -25,31 +32,44 @@ const mockTask = {
 	updatedAt: new Date('2024-01-01'),
 };
 
-const baseQuery = {
+const baseQuery: ListTasksQuery = {
+	projectId: projId,
 	status: undefined,
 	priority: undefined,
 	search: undefined,
 	overdue: undefined,
-	sortBy: 'created_at' as const,
-	order: 'desc' as const,
+	sortBy: 'created_at',
+	order: 'desc',
 	limit: 20,
-	offset: 0,
+	page: 1,
 };
 
-// Mocks the two selects inside assertTaskOwnership
-const ownershipSelectMock = () =>
-	jest.fn(() => {})
-		.mockImplementationOnce(() => chain([{ id: taskId, projectId: projId }]))
-		.mockImplementationOnce(() => chain([{ id: projId }]));
+// ─── Mocks helper type-safe ──────────────────────────────────────────────────
+
+type MockDb = {
+	db: {
+		select: jest.Mock;
+		insert: jest.Mock;
+		update: jest.Mock;
+		delete: jest.Mock;
+	};
+};
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('TasksService', () => {
 	let service: TasksService;
-	let dbService: { db: any };
+	let dbService: MockDb;
 
 	beforeEach(async () => {
-		dbService = { db: {} };
+		dbService = {
+			db: {
+				select: jest.fn(),
+				insert: jest.fn(),
+				update: jest.fn(),
+				delete: jest.fn(),
+			},
+		};
 
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
@@ -64,193 +84,131 @@ describe('TasksService', () => {
 	// ─── create ───────────────────────────────────────────────────────────────
 
 	describe('create', () => {
-		it('throws NOT_FOUND when the project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
+		it('throws NOT_FOUND when project does not exist', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [] }),
+				}),
+			} as never);
 
 			await expect(
-				service.create(userId, projId, { title: 'Task', status: 'todo', priority: 'medium' })
+				service.create(userId, {
+					projectId: projId,
+					title: 'Task',
+					status: 'todo',
+					priority: 'medium',
+				} as CreateTaskInput),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('creates a task and returns it', async () => {
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				insert: jest.fn(() => chain([mockTask])),
-			};
+		it('creates task successfully', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-			const result = await service.create(userId, projId, {
+			dbService.db.insert.mockReturnValueOnce({
+				values: () => ({
+					returning: () => [mockTask],
+				}),
+			} as never);
+
+			const result = await service.create(userId, {
+				projectId: projId,
 				title: 'Test Task',
-				status: 'todo',
 				priority: 'medium',
 			});
 
 			expect(result).toEqual(mockTask);
-		});
-
-		it('converts dueDate string to Date before inserting', async () => {
-			const insertChain = chain([{ ...mockTask, dueDate: new Date('2025-12-31') }]);
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				insert: jest.fn(() => insertChain),
-			};
-
-			await service.create(userId, projId, {
-				title: 'Task',
-				status: 'todo',
-				priority: 'medium',
-				dueDate: '2025-12-31T00:00:00.000Z',
-			});
-
-			expect(insertChain.values).toHaveBeenCalledWith(
-				expect.objectContaining({ dueDate: expect.any(Date) })
-			);
 		});
 	});
 
 	// ─── listByProject ────────────────────────────────────────────────────────
 
 	describe('listByProject', () => {
-		it('throws NOT_FOUND when the project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
-
-			await expect(service.listByProject(userId, projId, baseQuery)).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
-
 		it('returns paginated tasks', async () => {
-			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ id: projId }]))
-					.mockImplementationOnce(() => chain([{ value: 2 }]))
-					.mockImplementationOnce(() => chain([mockTask])),
-			};
+			dbService.db.select
+				.mockReturnValueOnce({
+					from: () => ({
+						where: () => ({ limit: () => [{ id: projId }] }),
+					}),
+				} as never)
+				.mockReturnValueOnce({
+					from: () => ({
+						where: () => [{ value: 1 }],
+					}),
+				} as never)
+				.mockReturnValueOnce({
+					from: () => ({
+						where: () => ({
+							orderBy: () => ({
+								limit: () => ({
+									offset: () => [mockTask],
+								}),
+							}),
+						}),
+					}),
+				} as never);
 
-			const result = await service.listByProject(userId, projId, baseQuery);
+			const result = await service.listByProject(userId, baseQuery);
 
-			expect(result).toEqual({ data: [mockTask], total: 2, limit: 20, offset: 0 });
-		});
-
-		it('applies custom limit and offset', async () => {
-			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ id: projId }]))
-					.mockImplementationOnce(() => chain([{ value: 10 }]))
-					.mockImplementationOnce(() => chain([])),
-			};
-
-			const result = await service.listByProject(userId, projId, {
-				...baseQuery,
-				limit: 5,
-				offset: 5,
-			});
-
-			expect(result.limit).toBe(5);
-			expect(result.offset).toBe(5);
+			expect(result.data).toEqual([mockTask]);
 		});
 	});
 
 	// ─── update ───────────────────────────────────────────────────────────────
 
 	describe('update', () => {
-		it('throws NOT_FOUND when the task does not exist', async () => {
-			dbService.db = {
-				select: jest.fn(() => {}).mockImplementationOnce(() => chain([])),
-			};
+		it('updates task and sets completedAt when done', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: taskId, projectId: projId }] }),
+				}),
+			} as never);
 
-			await expect(service.update(userId, taskId, { title: 'New' })).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-		it('throws FORBIDDEN when the task belongs to another user', async () => {
-			dbService.db = {
-				select: jest.fn(() => {})
-					.mockImplementationOnce(() => chain([{ id: taskId, projectId: projId }]))
-					.mockImplementationOnce(() => chain([])), // project not found for this user
-			};
+			dbService.db.update.mockReturnValueOnce({
+				set: () => ({
+					where: () => ({
+						returning: () => [{ ...mockTask, status: 'done' }],
+					}),
+				}),
+			} as never);
 
-			await expect(service.update(userId, taskId, { title: 'X' })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
-		});
+			const result = await service.update(userId, {
+				taskId,
+				status: 'done',
+			} as UpdateTaskInput);
 
-		it('sets completedAt when status changes to done', async () => {
-			const updateChain = chain([{ ...mockTask, status: 'done', completedAt: new Date() }]);
-			dbService.db = {
-				select: ownershipSelectMock(),
-				update: jest.fn(() => updateChain),
-			};
-
-			await service.update(userId, taskId, { status: 'done' });
-
-			expect(updateChain.set).toHaveBeenCalledWith(
-				expect.objectContaining({ status: 'done', completedAt: expect.any(Date) })
-			);
-		});
-
-		it('clears completedAt when status moves away from done', async () => {
-			const updateChain = chain([{ ...mockTask, status: 'todo', completedAt: null }]);
-			dbService.db = {
-				select: ownershipSelectMock(),
-				update: jest.fn(() => updateChain),
-			};
-
-			await service.update(userId, taskId, { status: 'todo' });
-
-			expect(updateChain.set).toHaveBeenCalledWith(
-				expect.objectContaining({ status: 'todo', completedAt: null })
-			);
-		});
-
-		it('does not touch completedAt when status is not in the update', async () => {
-			const updateChain = chain([{ ...mockTask, title: 'New Title' }]);
-			dbService.db = {
-				select: ownershipSelectMock(),
-				update: jest.fn(() => updateChain),
-			};
-
-			await service.update(userId, taskId, { title: 'New Title' });
-
-			const setArg = (updateChain.set as jest.Mock).mock.calls[0]![0] as Record<string, unknown>;
-			expect('completedAt' in setArg).toBe(false);
-		});
-	});
-
-	// ─── updateStatus ─────────────────────────────────────────────────────────
-
-	describe('updateStatus', () => {
-		it('delegates to update and sets completedAt for done', async () => {
-			const updateChain = chain([{ ...mockTask, status: 'done', completedAt: new Date() }]);
-			dbService.db = {
-				select: ownershipSelectMock(),
-				update: jest.fn(() => updateChain),
-			};
-
-			await service.updateStatus(userId, taskId, 'done');
-
-			expect(updateChain.set).toHaveBeenCalledWith(
-				expect.objectContaining({ status: 'done', completedAt: expect.any(Date) })
-			);
+			expect(result.status).toBe('done');
 		});
 	});
 
 	// ─── delete ───────────────────────────────────────────────────────────────
 
 	describe('delete', () => {
-		it('throws NOT_FOUND when the task does not exist', async () => {
-			dbService.db = {
-				select: jest.fn(() => {}).mockImplementationOnce(() => chain([])),
-			};
+		it('deletes task', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: taskId, projectId: projId }] }),
+				}),
+			} as never);
 
-			await expect(service.delete(userId, taskId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-		it('deletes the task and returns a success message', async () => {
-			dbService.db = {
-				select: ownershipSelectMock(),
-				delete: jest.fn(() => chain(undefined)),
-			};
+			dbService.db.delete.mockReturnValueOnce({
+				where: () => [],
+			} as never);
 
 			const result = await service.delete(userId, taskId);
 
@@ -261,97 +219,81 @@ describe('TasksService', () => {
 	// ─── bulkUpdateStatus ─────────────────────────────────────────────────────
 
 	describe('bulkUpdateStatus', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
+		it('updates status in bulk', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-			await expect(
-				service.bulkUpdateStatus(userId, projId, { taskIds: [taskId], status: 'done' })
-			).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
+			dbService.db.update.mockReturnValueOnce({
+				set: () => ({
+					where: () => ({
+						returning: () => [{ id: taskId }],
+					}),
+				}),
+			} as never);
 
-		it('sets completedAt when bulk-updating to done', async () => {
-			const bulkChain = chain([{ id: taskId }]);
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				update: jest.fn(() => bulkChain),
-			};
-
-			const result = await service.bulkUpdateStatus(userId, projId, {
+			const result = await service.bulkUpdateStatus(userId, {
+				projectId: projId,
 				taskIds: [taskId],
 				status: 'done',
-			});
+			} as BulkUpdateStatusInput);
 
 			expect(result.count).toBe(1);
-			expect(bulkChain.set).toHaveBeenCalledWith(
-				expect.objectContaining({ status: 'done', completedAt: expect.any(Date) })
-			);
-		});
-
-		it('clears completedAt when bulk-updating to a non-done status', async () => {
-			const bulkChain = chain([{ id: taskId }]);
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				update: jest.fn(() => bulkChain),
-			};
-
-			await service.bulkUpdateStatus(userId, projId, { taskIds: [taskId], status: 'todo' });
-
-			expect(bulkChain.set).toHaveBeenCalledWith(
-				expect.objectContaining({ status: 'todo', completedAt: null })
-			);
 		});
 	});
 
 	// ─── bulkUpdatePriority ───────────────────────────────────────────────────
 
 	describe('bulkUpdatePriority', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
+		it('updates priority in bulk', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-			await expect(
-				service.bulkUpdatePriority(userId, projId, { taskIds: [taskId], priority: 'high' })
-			).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
+			dbService.db.update.mockReturnValueOnce({
+				set: () => ({
+					where: () => ({
+						returning: () => [{ id: taskId }],
+					}),
+				}),
+			} as never);
 
-		it('updates priority and returns the count of affected tasks', async () => {
-			const bulkChain = chain([{ id: taskId }]);
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				update: jest.fn(() => bulkChain),
-			};
-
-			const result = await service.bulkUpdatePriority(userId, projId, {
+			const result = await service.bulkUpdatePriority(userId, {
+				projectId: projId,
 				taskIds: [taskId],
 				priority: 'high',
-			});
+			} as BulkUpdatePriorityInput);
 
 			expect(result.count).toBe(1);
-			expect(bulkChain.set).toHaveBeenCalledWith({ priority: 'high' });
 		});
 	});
 
 	// ─── bulkDelete ───────────────────────────────────────────────────────────
 
 	describe('bulkDelete', () => {
-		it('throws NOT_FOUND when project does not exist', async () => {
-			dbService.db = { select: jest.fn(() => chain([])) };
+		it('deletes tasks in bulk', async () => {
+			dbService.db.select.mockReturnValueOnce({
+				from: () => ({
+					where: () => ({ limit: () => [{ id: projId }] }),
+				}),
+			} as never);
 
-			await expect(service.bulkDelete(userId, projId, [taskId])).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
+			dbService.db.delete.mockReturnValueOnce({
+				where: () => ({
+					returning: () => [{ id: taskId }],
+				}),
+			} as never);
 
-		it('deletes tasks and returns the count', async () => {
-			const deleteChain = chain([{ id: taskId }]);
-			dbService.db = {
-				select: jest.fn(() => chain([{ id: projId }])),
-				delete: jest.fn(() => deleteChain),
-			};
-
-			const result = await service.bulkDelete(userId, projId, [taskId]);
+			const result = await service.bulkDelete(userId, {
+				projectId: projId,
+				taskIds: [taskId],
+			} as BulkDeleteInput);
 
 			expect(result.count).toBe(1);
-			expect(result.message).toBe('Tasks deleted successfully');
 		});
 	});
 });

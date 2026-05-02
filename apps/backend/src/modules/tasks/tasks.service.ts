@@ -6,27 +6,29 @@ import { projects, tasks } from '@taskflow/database';
 import type { ITasksService } from '@taskflow/orpc';
 import type {
 	BulkActionOutput,
+	BulkDeleteInput,
 	BulkUpdatePriorityInput,
 	BulkUpdateStatusInput,
 	CreateTaskInput,
 	ListTasksQuery,
+	MessageOutput,
 	PaginatedTasksOutput,
 	TaskOutput,
-	TaskStatus,
 	UpdateTaskInput,
 } from '@taskflow/validation';
 
 import { DatabaseService } from '@backend/modules/database/database.service';
+import { convertToPaginatedOutput } from '@backend/libs/functions/convert-to-paginated-output';
 
 @Injectable()
 export class TasksService implements ITasksService {
-	constructor(private readonly database: DatabaseService) {}
+	constructor(private readonly database: DatabaseService) { }
 
-	async create(userId: string, projectId: string, input: CreateTaskInput): Promise<TaskOutput> {
+	async create(userId: string, input: CreateTaskInput): Promise<TaskOutput> {
 		const [project] = await this.database.db
 			.select({ id: projects.id })
 			.from(projects)
-			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+			.where(and(eq(projects.id, input.projectId), eq(projects.userId, userId)))
 			.limit(1);
 
 		if (!project) {
@@ -36,28 +38,27 @@ export class TasksService implements ITasksService {
 		const { dueDate, ...rest } = input;
 		const [task] = await this.database.db
 			.insert(tasks)
-			.values({ ...rest, projectId, dueDate: dueDate ? new Date(dueDate) : null })
+			.values({ ...rest, projectId: input.projectId, dueDate: dueDate ? new Date(dueDate) : null })
 			.returning();
 
-		return task as TaskOutput;
+		return task;
 	}
 
 	async listByProject(
 		userId: string,
-		projectId: string,
 		query: ListTasksQuery
 	): Promise<PaginatedTasksOutput> {
 		const [project] = await this.database.db
 			.select({ id: projects.id })
 			.from(projects)
-			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+			.where(and(eq(projects.id, query.projectId), eq(projects.userId, userId)))
 			.limit(1);
 
 		if (!project) {
 			throw new ORPCError('NOT_FOUND', { message: 'Project not found' });
 		}
 
-		const conditions = [eq(tasks.projectId, projectId)];
+		const conditions = [eq(tasks.projectId, query.projectId)];
 		if (query.status) conditions.push(eq(tasks.status, query.status));
 		if (query.priority) conditions.push(eq(tasks.priority, query.priority));
 		if (query.search) conditions.push(ilike(tasks.title, `%${query.search}%`));
@@ -69,24 +70,28 @@ export class TasksService implements ITasksService {
 
 		const whereClause = and(...conditions);
 
-		const [{ value: total }] = await this.database.db
-			.select({ value: count() })
-			.from(tasks)
-			.where(whereClause);
+		const [countResult, data] = await Promise.all([
+			this.database.db
+				.select({ value: count() })
+				.from(tasks)
+				.where(whereClause),
 
-		const data = await this.database.db
-			.select()
-			.from(tasks)
-			.where(whereClause)
-			.orderBy(buildOrderClause(query))
-			.limit(query.limit)
-			.offset(query.offset);
+			this.database.db
+				.select()
+				.from(tasks)
+				.where(whereClause)
+				.orderBy(buildOrderClause(query))
+				.limit(query.limit)
+				.offset((query.page - 1) * query.limit),
+		]);
 
-		return { data: data as TaskOutput[], total: Number(total), limit: query.limit, offset: query.offset };
+		const [{ value: total }] = countResult;
+
+		return convertToPaginatedOutput(data, total, query.page, query.limit);
 	}
 
-	async update(userId: string, taskId: string, input: UpdateTaskInput): Promise<TaskOutput> {
-		await this.assertTaskOwnership(userId, taskId);
+	async update(userId: string, input: UpdateTaskInput): Promise<TaskOutput> {
+		await this.assertTaskOwnership(userId, input.taskId);
 
 		const { dueDate, status, ...rest } = input;
 		const updateData: Record<string, unknown> = { ...rest };
@@ -102,17 +107,13 @@ export class TasksService implements ITasksService {
 		const [updated] = await this.database.db
 			.update(tasks)
 			.set(updateData)
-			.where(eq(tasks.id, taskId))
+			.where(eq(tasks.id, input.taskId))
 			.returning();
 
-		return updated as TaskOutput;
+		return updated;
 	}
 
-	async updateStatus(userId: string, taskId: string, status: TaskStatus): Promise<TaskOutput> {
-		return this.update(userId, taskId, { status });
-	}
-
-	async delete(userId: string, taskId: string): Promise<{ message: string }> {
+	async delete(userId: string, taskId: string): Promise<MessageOutput> {
 		await this.assertTaskOwnership(userId, taskId);
 
 		await this.database.db.delete(tasks).where(eq(tasks.id, taskId));
@@ -122,17 +123,16 @@ export class TasksService implements ITasksService {
 
 	async bulkUpdateStatus(
 		userId: string,
-		projectId: string,
 		input: BulkUpdateStatusInput
 	): Promise<BulkActionOutput> {
-		await this.assertProjectOwnership(userId, projectId);
+		await this.assertProjectOwnership(userId, input.projectId);
 
 		const completedAt = input.status === 'done' ? new Date() : null;
 
 		const updated = await this.database.db
 			.update(tasks)
 			.set({ status: input.status, completedAt })
-			.where(and(eq(tasks.projectId, projectId), inArray(tasks.id, input.taskIds)))
+			.where(and(eq(tasks.projectId, input.projectId), inArray(tasks.id, input.taskIds)))
 			.returning({ id: tasks.id });
 
 		return { message: 'Tasks updated successfully', count: updated.length };
@@ -140,15 +140,14 @@ export class TasksService implements ITasksService {
 
 	async bulkUpdatePriority(
 		userId: string,
-		projectId: string,
 		input: BulkUpdatePriorityInput
 	): Promise<BulkActionOutput> {
-		await this.assertProjectOwnership(userId, projectId);
+		await this.assertProjectOwnership(userId, input.projectId);
 
 		const updated = await this.database.db
 			.update(tasks)
 			.set({ priority: input.priority })
-			.where(and(eq(tasks.projectId, projectId), inArray(tasks.id, input.taskIds)))
+			.where(and(eq(tasks.projectId, input.projectId), inArray(tasks.id, input.taskIds)))
 			.returning({ id: tasks.id });
 
 		return { message: 'Tasks updated successfully', count: updated.length };
@@ -156,14 +155,13 @@ export class TasksService implements ITasksService {
 
 	async bulkDelete(
 		userId: string,
-		projectId: string,
-		taskIds: string[]
+		input: BulkDeleteInput
 	): Promise<BulkActionOutput> {
-		await this.assertProjectOwnership(userId, projectId);
+		await this.assertProjectOwnership(userId, input.projectId);
 
 		const deleted = await this.database.db
 			.delete(tasks)
-			.where(and(eq(tasks.projectId, projectId), inArray(tasks.id, taskIds)))
+			.where(and(eq(tasks.projectId, input.projectId), inArray(tasks.id, input.taskIds)))
 			.returning({ id: tasks.id });
 
 		return { message: 'Tasks deleted successfully', count: deleted.length };

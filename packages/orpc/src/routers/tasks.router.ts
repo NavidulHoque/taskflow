@@ -11,6 +11,8 @@ import {
 	taskOutputSchema,
 	taskStatusSchema,
 	updateTaskSchema,
+	deleteTaskSchema,
+	bulkDeleteSchema,
 } from '@taskflow/validation';
 
 import { protectedProcedure } from '../init';
@@ -24,11 +26,10 @@ export const tasksRouter = {
 			successStatus: 201,
 			tags: ['tasks'],
 		})
-		.input(createTaskSchema.extend({ projectId: z.string().uuid() }))
+		.input(createTaskSchema)
 		.output(taskOutputSchema)
 		.handler(({ context, input }) => {
-			const { projectId, ...data } = input;
-			return context.services.tasks.create(context.userId, projectId, data);
+			return context.services.tasks.create(context.userId, input);
 		}),
 
 	listByProject: protectedProcedure
@@ -38,11 +39,10 @@ export const tasksRouter = {
 			summary: 'Get tasks for a project with search, filtering, sorting, and pagination',
 			tags: ['tasks'],
 		})
-		.input(listTasksQuerySchema.extend({ projectId: z.string().uuid() }))
+		.input(listTasksQuerySchema)
 		.output(paginatedTasksOutputSchema)
 		.handler(({ context, input }) => {
-			const { projectId, ...query } = input;
-			return context.services.tasks.listByProject(context.userId, projectId, query);
+			return context.services.tasks.listByProject(context.userId, input);
 		}),
 
 	update: protectedProcedure
@@ -52,25 +52,11 @@ export const tasksRouter = {
 			summary: 'Update a task title, description, status, priority, or due date',
 			tags: ['tasks'],
 		})
-		.input(updateTaskSchema.extend({ id: z.string().uuid() }))
+		.input(updateTaskSchema)
 		.output(taskOutputSchema)
 		.handler(({ context, input }) => {
-			const { id, ...data } = input;
-			return context.services.tasks.update(context.userId, id, data);
+			return context.services.tasks.update(context.userId, input);
 		}),
-
-	updateStatus: protectedProcedure
-		.route({
-			method: 'PATCH',
-			path: '/tasks/{id}/status',
-			summary: 'Update a task status',
-			tags: ['tasks'],
-		})
-		.input(z.object({ id: z.string().uuid(), status: taskStatusSchema }))
-		.output(taskOutputSchema)
-		.handler(({ context, input }) =>
-			context.services.tasks.updateStatus(context.userId, input.id, input.status)
-		),
 
 	delete: protectedProcedure
 		.route({
@@ -79,9 +65,9 @@ export const tasksRouter = {
 			summary: 'Delete a task',
 			tags: ['tasks'],
 		})
-		.input(z.object({ id: z.string().uuid() }))
+		.input(deleteTaskSchema)
 		.output(messageOutputSchema)
-		.handler(({ context, input }) => context.services.tasks.delete(context.userId, input.id)),
+		.handler(({ context, input }) => context.services.tasks.delete(context.userId, input.taskId)),
 
 	bulkUpdateStatus: protectedProcedure
 		.route({
@@ -90,11 +76,10 @@ export const tasksRouter = {
 			summary: 'Update the status of multiple tasks at once',
 			tags: ['tasks'],
 		})
-		.input(bulkUpdateStatusSchema.extend({ projectId: z.string().uuid() }))
+		.input(bulkUpdateStatusSchema)
 		.output(bulkActionOutputSchema)
 		.handler(({ context, input }) => {
-			const { projectId, ...data } = input;
-			return context.services.tasks.bulkUpdateStatus(context.userId, projectId, data);
+			return context.services.tasks.bulkUpdateStatus(context.userId, input);
 		}),
 
 	bulkUpdatePriority: protectedProcedure
@@ -104,11 +89,10 @@ export const tasksRouter = {
 			summary: 'Update the priority of multiple tasks at once',
 			tags: ['tasks'],
 		})
-		.input(bulkUpdatePrioritySchema.extend({ projectId: z.string().uuid() }))
+		.input(bulkUpdatePrioritySchema)
 		.output(bulkActionOutputSchema)
 		.handler(({ context, input }) => {
-			const { projectId, ...data } = input;
-			return context.services.tasks.bulkUpdatePriority(context.userId, projectId, data);
+			return context.services.tasks.bulkUpdatePriority(context.userId, input);
 		}),
 
 	bulkDelete: protectedProcedure
@@ -118,9 +102,9 @@ export const tasksRouter = {
 			summary: 'Delete multiple tasks at once',
 			tags: ['tasks'],
 		})
-		.input(bulkTaskIdsSchema.extend({ projectId: z.string().uuid() }))
+		.input(bulkDeleteSchema)
 		.output(bulkActionOutputSchema)
 		.handler(({ context, input }) =>
-			context.services.tasks.bulkDelete(context.userId, input.projectId, input.taskIds)
+			context.services.tasks.bulkDelete(context.userId, input)
 		),
 };

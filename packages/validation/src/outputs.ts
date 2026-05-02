@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TaskPriority, TaskStatus } from '@taskflow/shared';
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 
@@ -84,8 +85,8 @@ export const taskOutputSchema = z.object({
 	id: z.string(),
 	title: z.string(),
 	description: z.string().nullable(),
-	status: z.enum(['todo', 'in_progress', 'done']),
-	priority: z.enum(['low', 'medium', 'high']),
+	status: z.enum([TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE]),
+	priority: z.enum([TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH]),
 	dueDate: z.date().nullable(),
 	completedAt: z.date().nullable(),
 	projectId: z.string(),
@@ -93,12 +94,7 @@ export const taskOutputSchema = z.object({
 	updatedAt: z.date(),
 });
 
-export const paginatedTasksOutputSchema = z.object({
-	data: z.array(taskOutputSchema),
-	total: z.number(),
-	limit: z.number(),
-	offset: z.number(),
-});
+export const paginatedTasksOutputSchema = paginatedOutputSchema(taskOutputSchema);
 
 export const bulkActionOutputSchema = z.object({
 	message: z.string(),
